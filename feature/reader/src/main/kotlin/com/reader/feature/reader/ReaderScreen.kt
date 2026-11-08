@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -179,49 +180,79 @@ fun ReaderRoute(
                         animationSpec = tween(durationMillis = 280),
                         label = "reader-carousel-progress",
                     )
-                    val stepPx = with(density) { (pageWidth * 0.84f + 14.dp).toPx() }
-                    val dragOffset = remember { mutableFloatStateOf(0f) }
+                    val pageWidthPx = with(density) { pageWidth.toPx() }
+                    val previewStepPx = with(density) { (pageWidth * 0.84f + 14.dp).toPx() }
+                    // The page spacing interpolates from one full page width to the
+                    // reduced preview spacing. Neighbour pages stay off-screen in
+                    // fullscreen mode instead of collapsing on top of the current page.
+                    val pageStepPx = pageWidthPx + (previewStepPx - pageWidthPx) * previewProgress
                     var isDragging by remember { mutableStateOf(false) }
-                    val settleOffset = remember { Animatable(0f) }
+                    var dragPosition by remember { mutableFloatStateOf(current.toFloat()) }
+                    val pagePosition = remember { Animatable(current.toFloat()) }
                     val coroutineScope = rememberCoroutineScope()
-                    val visualDragOffset = if (isDragging) dragOffset.floatValue else settleOffset.value
+
+                    LaunchedEffect(state.adjacentPagesVisible) {
+                        if (state.adjacentPagesVisible) {
+                            pagePosition.snapTo(current.toFloat())
+                        }
+                    }
+
+                    val visualPosition = if (state.adjacentPagesVisible) {
+                        if (isDragging) dragPosition else pagePosition.value
+                    } else {
+                        current.toFloat()
+                    }
 
                     Box(
                         modifier = Modifier.fillMaxSize().then(
                             if (state.adjacentPagesVisible) {
-                                Modifier.pointerInput(current, total, stepPx) {
+                                Modifier.pointerInput(current, total, pageStepPx) {
+                                    val velocityTracker = VelocityTracker()
+                                    var dragStartPosition = current.toFloat()
+                                    var totalDragX = 0f
+
                                     detectDragGestures(
                                         onDragStart = {
+                                            dragStartPosition = pagePosition.value
+                                            dragPosition = dragStartPosition
+                                            totalDragX = 0f
                                             isDragging = true
-                                            dragOffset.floatValue = 0f
-                                            coroutineScope.launch {
-                                                settleOffset.stop()
-                                                settleOffset.snapTo(0f)
-                                            }
+                                            velocityTracker.resetTracking()
+                                            coroutineScope.launch { pagePosition.stop() }
                                         },
                                         onDrag = { change, amount ->
                                             change.consume()
-                                            dragOffset.floatValue = (dragOffset.floatValue + amount.x)
-                                                .coerceIn(-stepPx * 1.15f, stepPx * 1.15f)
+                                            totalDragX += amount.x
+                                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+
+                                            val rawPosition = dragStartPosition - totalDragX / pageStepPx
+                                            val lastPage = (total - 1).coerceAtLeast(0).toFloat()
+                                            // Match the prototype's soft resistance at either end.
+                                            dragPosition = when {
+                                                rawPosition < 0f -> rawPosition * 0.35f
+                                                rawPosition > lastPage ->
+                                                    lastPage + (rawPosition - lastPage) * 0.35f
+                                                else -> rawPosition
+                                            }
                                         },
                                         onDragEnd = {
-                                            val threshold = size.width * 0.12f
-                                            val delta = when {
-                                                dragOffset.floatValue <= -threshold -> 1
-                                                dragOffset.floatValue >= threshold -> -1
-                                                else -> 0
-                                            }
-                                            val target = (current + delta).coerceIn(0, (total - 1).coerceAtLeast(0))
-                                            val appliedDelta = target - current
-                                            val releaseOffset = dragOffset.floatValue + appliedDelta * stepPx
+                                            val velocityPagesPerSecond =
+                                                -velocityTracker.calculateVelocity().x / pageStepPx
+                                            val lowerTarget = (current - 1).coerceAtLeast(0)
+                                            val upperTarget = (current + 1).coerceAtMost(total - 1)
+                                            val target = (dragPosition + velocityPagesPerSecond * 0.18f)
+                                                .roundToInt()
+                                                .coerceIn(lowerTarget, upperTarget)
+                                            val releasePosition = dragPosition
+
                                             if (target != current) {
                                                 viewModel.onEvent(ReaderEvent.JumpToPage(target))
                                             }
-                                            isDragging = false
                                             coroutineScope.launch {
-                                                settleOffset.snapTo(releaseOffset)
-                                                settleOffset.animateTo(
-                                                    0f,
+                                                pagePosition.snapTo(releasePosition)
+                                                isDragging = false
+                                                pagePosition.animateTo(
+                                                    target.toFloat(),
                                                     animationSpec = spring(
                                                         dampingRatio = 0.86f,
                                                         stiffness = 420f,
@@ -230,10 +261,14 @@ fun ReaderRoute(
                                             }
                                         },
                                         onDragCancel = {
-                                            isDragging = false
+                                            val releasePosition = dragPosition
                                             coroutineScope.launch {
-                                                settleOffset.snapTo(dragOffset.floatValue)
-                                                settleOffset.animateTo(0f, spring())
+                                                pagePosition.snapTo(releasePosition)
+                                                isDragging = false
+                                                pagePosition.animateTo(
+                                                    current.toFloat(),
+                                                    animationSpec = spring(),
+                                                )
                                             }
                                         },
                                     )
@@ -257,7 +292,7 @@ fun ReaderRoute(
                             val firstPage = (current - 2).coerceAtLeast(0)
                             val lastPage = (current + 2).coerceAtMost(total - 1)
                             for (page in firstPage..lastPage) {
-                                val relativePage = page - current
+                                val relativePage = page - visualPosition
                                 ReaderPageCard(
                                     page = page,
                                     width = pageWidth,
@@ -266,8 +301,7 @@ fun ReaderRoute(
                                     showFrame = state.adjacentPagesVisible,
                                     modifier = Modifier.align(Alignment.Center)
                                         .graphicsLayer {
-                                            translationX = relativePage * stepPx * previewProgress +
-                                                if (state.adjacentPagesVisible) visualDragOffset else 0f
+                                            translationX = relativePage * pageStepPx
                                             val scale = 1f - 0.16f * previewProgress
                                             scaleX = scale
                                             scaleY = scale
@@ -275,8 +309,8 @@ fun ReaderRoute(
                                             shape = RoundedCornerShape(8.dp)
                                             clip = previewProgress > 0.01f
                                         }
-                                        .zIndex((10 - kotlin.math.abs(relativePage)).toFloat())
-                                        .clickable(enabled = state.adjacentPagesVisible) {
+                                        .zIndex((10f - kotlin.math.abs(relativePage)))
+                                        .clickable(enabled = state.adjacentPagesVisible && !isDragging) {
                                             viewModel.onEvent(ReaderEvent.SelectPage(page))
                                         },
                                     drawPage = viewModel::drawPage,
