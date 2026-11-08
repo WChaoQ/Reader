@@ -2,8 +2,10 @@ package com.reader.core.data
 
 import com.reader.core.database.BookmarkDao
 import com.reader.core.database.BookmarkEntity
+import com.reader.core.model.Bookmark
 import com.reader.core.model.Locator
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -12,7 +14,8 @@ import javax.inject.Singleton
 class BookmarkRepository @Inject constructor(
     private val dao: BookmarkDao,
 ) {
-    fun observe(bookId: String): Flow<List<BookmarkEntity>> = dao.observeByBook(bookId)
+    fun observe(bookId: String): Flow<List<Bookmark>> =
+        dao.observeByBook(bookId).map { entities -> entities.map(BookmarkEntity::toModel) }
 
     suspend fun add(bookId: String, locator: Locator, snippet: String): String {
         val id = UUID.randomUUID().toString()
@@ -31,3 +34,11 @@ class BookmarkRepository @Inject constructor(
 
     suspend fun delete(id: String) = dao.delete(id)
 }
+
+private fun BookmarkEntity.toModel() = Bookmark(
+    id = id,
+    bookId = bookId,
+    locator = Locator(chapter = chapter, offset = offset),
+    snippet = snippet,
+    createdAt = createdAt,
+)
