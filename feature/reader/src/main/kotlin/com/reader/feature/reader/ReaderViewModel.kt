@@ -39,8 +39,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
-enum class ReaderMode { Reading, Overview }
-
 data class SearchHit(
     val locator: Locator,
     val snippet: String,
@@ -53,12 +51,12 @@ data class ReaderUiState(
     val error: String? = null,
     val currentPage: Int = 0,
     val pageCount: PageCountInfo = PageCountInfo(),
-    val chromeVisible: Boolean = true,
+    val chromeVisible: Boolean = false,
+    val adjacentPagesVisible: Boolean = false,
     val pageReady: Boolean = false,
     val renderRevision: Int = 0,
     val theme: String = "day",
     val format: BookFormat? = null,
-    val mode: ReaderMode = ReaderMode.Reading,
     val toc: List<TocEntry> = emptyList(),
     val tocVisible: Boolean = false,
     val bookmarks: List<Bookmark> = emptyList(),
@@ -76,7 +74,7 @@ sealed interface ReaderEvent {
     data object TapCenter : ReaderEvent
     data class JumpToPage(val page: Int) : ReaderEvent
     data class JumpToLocator(val locator: Locator) : ReaderEvent
-    data object ToggleOverview : ReaderEvent
+    data class SelectPage(val page: Int) : ReaderEvent
     data object ToggleToc : ReaderEvent
     data object ToggleBookmarks : ReaderEvent
     data object ToggleSearch : ReaderEvent
@@ -153,20 +151,25 @@ class ReaderViewModel @Inject constructor(
             ReaderEvent.TapLeft -> turn(-1)
             ReaderEvent.TapRight -> turn(1)
             ReaderEvent.TapCenter -> _state.update {
-                it.copy(chromeVisible = !it.chromeVisible, tocVisible = false, bookmarksVisible = false, searchVisible = false)
+                it.copy(
+                    adjacentPagesVisible = !it.adjacentPagesVisible,
+                    tocVisible = false,
+                    bookmarksVisible = false,
+                    searchVisible = false,
+                )
             }
             is ReaderEvent.JumpToPage -> jump(event.page)
+            is ReaderEvent.SelectPage -> {
+                jump(event.page)
+                _state.update { it.copy(adjacentPagesVisible = false, chromeVisible = false) }
+            }
             is ReaderEvent.JumpToLocator -> {
                 currentLocator = event.locator
                 val page = engine?.pageIndexOf(event.locator) ?: 0
                 jump(page, updateLocator = false)
                 _state.update {
-                    it.copy(mode = ReaderMode.Reading, tocVisible = false, bookmarksVisible = false, searchVisible = false, chromeVisible = false)
+                    it.copy(adjacentPagesVisible = false, tocVisible = false, bookmarksVisible = false, searchVisible = false, chromeVisible = false)
                 }
-            }
-            ReaderEvent.ToggleOverview -> _state.update {
-                val next = if (it.mode == ReaderMode.Overview) ReaderMode.Reading else ReaderMode.Overview
-                it.copy(mode = next, chromeVisible = next == ReaderMode.Overview, tocVisible = false, bookmarksVisible = false, searchVisible = false)
             }
             ReaderEvent.ToggleToc -> _state.update {
                 it.copy(tocVisible = !it.tocVisible, bookmarksVisible = false, searchVisible = false, chromeVisible = true)
@@ -255,7 +258,6 @@ class ReaderViewModel @Inject constructor(
     }
 
     private fun turn(delta: Int) {
-        if (_state.value.mode == ReaderMode.Overview) return
         val eng = engine ?: return
         val count = eng.pageCount.value.available
         if (count <= 0) return
@@ -270,7 +272,7 @@ class ReaderViewModel @Inject constructor(
         val count = engine?.pageCount?.value?.available ?: return
         val next = page.coerceIn(0, (count - 1).coerceAtLeast(0))
         if (updateLocator) currentLocator = engine?.locatorOf(next) ?: currentLocator
-        _state.update { it.copy(currentPage = next, mode = ReaderMode.Reading) }
+        _state.update { it.copy(currentPage = next) }
         scheduleSaveProgress()
     }
 
