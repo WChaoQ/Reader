@@ -53,6 +53,7 @@ data class ReaderUiState(
     val pageCount: PageCountInfo = PageCountInfo(),
     val chromeVisible: Boolean = true,
     val pageReady: Boolean = false,
+    val renderRevision: Int = 0,
     val theme: String = "day",
     val format: BookFormat? = null,
     val mode: ReaderMode = ReaderMode.Reading,
@@ -305,7 +306,15 @@ class ReaderViewModel @Inject constructor(
             var toc: List<TocEntry> = emptyList()
             val eng: ReaderEngine = if (book.format == BookFormat.PDF) {
                 withContext(dispatchers.io) {
-                    FixedEngine(file = file, pageWidthPx = pageWidth, nightMode = settings.theme == "night")
+                    FixedEngine(
+                        file = file,
+                        pageWidthPx = pageWidth,
+                        nightMode = settings.theme == "night",
+                        ioDispatcher = dispatchers.io,
+                        onPageRendered = {
+                            _state.update { state -> state.copy(renderRevision = state.renderRevision + 1) }
+                        },
+                    )
                 }.also {
                     toc = (0 until it.pageCount.value.display).map { page ->
                         TocEntry("第 ${page + 1} 页", Locator(page, 0))
