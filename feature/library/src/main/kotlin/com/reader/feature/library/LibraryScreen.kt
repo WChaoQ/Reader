@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -97,17 +98,14 @@ fun LibraryRoute(
                         ),
                     )
                 },
+                modifier = Modifier.navigationBarsPadding(),
             ) {
                 Icon(Icons.Default.Add, contentDescription = "导入")
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
+    ) { innerPadding ->
+        Box(modifier = Modifier.fillMaxSize()) {
             when {
                 state.isLoading -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
@@ -118,15 +116,22 @@ fun LibraryRoute(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier
                             .align(Alignment.Center)
+                            .padding(innerPadding)
                             .padding(32.dp),
                     )
                 }
                 else -> {
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(140.dp),
-                        contentPadding = PaddingValues(12.dp),
+                        contentPadding = PaddingValues(
+                            start = 12.dp,
+                            end = 12.dp,
+                            top = innerPadding.calculateTopPadding() + 12.dp,
+                            bottom = innerPadding.calculateBottomPadding() + 88.dp,
+                        ),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
                         items(state.books, key = { it.id }) { book ->
                             BookCard(
