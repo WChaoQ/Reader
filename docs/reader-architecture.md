@@ -166,7 +166,7 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 
 ### 当前配置中值得治理的依赖
 
-1. `:feature:reader` 已不再直接依赖 database、datastore、storage 或 common；书籍/进度/书签/设置/文档打开分别通过 `:core:data` 的 Repository API 访问。
+1. `:feature:reader` 和 `:feature:settings` 已不再直接依赖 database、datastore 或 storage；书籍/进度/书签/设置/文档打开分别通过 `:core:data` 的 Repository API 访问。Reader 仍保留 `:core:model`、`format-api`、`layout`、`render` 等直接依赖。
 2. `:feature:reader` 保留 format-api、layout、render 依赖：它需要统一 BookSource 类型并直接驱动布局与渲染，但不依赖具体格式实现。
 3. :app 当前显式依赖多个格式实现和 Engine 模块，作为应用组合/装配层可以接受；若采用 Hilt multibinding 或 Engine Registry，应集中维护格式注册。
 4. :core:data 当前依赖 format-api，应明确它只协调元数据/文档访问，不承担排版和渲染。
@@ -369,7 +369,7 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 ### 优先治理顺序
 
 1. 已为 format-api 明确零基索引、资源所有权、关闭责任和 handler 唯一性，并为 FormatRegistry 增加单元测试。
-2. 已将书签和阅读设置模型移入纯 Kotlin core:model；Reader Feature 不再接触 Room Entity 或 DataStore 实现。
+2. 已将书签和阅读设置模型移入纯 Kotlin core:model；Reader 和 Settings Feature 不再接触 Room Entity 或 DataStore 实现。
 3. 已通过 BookSourceRepository 和 BookRepository 隐藏格式注册与文件存储细节。
 4. 继续为四种格式建立真实文件样本、异常输入、取消和资源释放测试。
 5. 评估整文件复制的存储成本，并建立大文档内存与性能基线。
