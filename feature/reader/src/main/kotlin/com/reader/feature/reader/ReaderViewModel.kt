@@ -15,6 +15,7 @@ import com.reader.core.storage.BookFileStore
 import com.reader.engine.format.FormatRegistry
 import com.reader.engine.layout.LayoutConfig
 import com.reader.engine.layout.SimplePaginator
+import com.reader.engine.render.FixedEngine
 import com.reader.engine.render.PageCountInfo
 import com.reader.engine.render.ReaderEngine
 import com.reader.engine.render.ReflowEngine
@@ -38,6 +39,7 @@ data class ReaderUiState(
     val chromeVisible: Boolean = true,
     val pageReady: Boolean = false,
     val theme: String = "day",
+    val format: BookFormat? = null,
 )
 
 sealed interface ReaderEvent {
@@ -91,7 +93,7 @@ class ReaderViewModel @Inject constructor(
         if (widthPx == pageWidth && heightPx == pageHeight) return
         pageWidth = widthPx
         pageHeight = heightPx
-        if (engine != null) {
+        if (engine != null && _state.value.format != BookFormat.PDF) {
             viewModelScope.launch { open() }
         }
     }
@@ -166,34 +168,45 @@ class ReaderViewModel @Inject constructor(
                 _state.update { it.copy(isLoading = false, error = "文件缺失") }
                 return
             }
-            val source = formatRegistry.open(file, file.name)
-            val config = LayoutConfig(
-                pageWidthPx = pageWidth,
-                pageHeightPx = pageHeight,
-                textSizePx = settings.fontSizeSp * 3f,
-                lineSpacingMult = settings.lineSpacingMult,
-                paragraphSpacingPx = settings.paragraphSpacingPx,
-                justify = settings.justify,
-            )
-            val saved = progressRepository.get(bookId) ?: Locator(0, 0)
-            val reflow = ReflowEngine(source, config, paginator, viewModelScope)
-            reflow.start(saved)
-            engine = reflow
 
-            reflow.ready.first { it }
-            val startPage = reflow.pageIndexOf(saved)
+            val saved = progressRepository.get(bookId) ?: Locator(0, 0)
+            val eng: ReaderEngine = if (book.format == BookFormat.PDF) {
+                FixedEngine(
+                    file = file,
+                    pageWidthPx = pageWidth,
+                    nightMode = settings.theme == "night",
+                )
+            } else {
+                val source = formatRegistry.open(file, file.name)
+                val config = LayoutConfig(
+                    pageWidthPx = pageWidth,
+                    pageHeightPx = pageHeight,
+                    textSizePx = settings.fontSizeSp * 3f,
+                    lineSpacingMult = settings.lineSpacingMult,
+                    paragraphSpacingPx = settings.paragraphSpacingPx,
+                    justify = settings.justify,
+                )
+                ReflowEngine(source, config, paginator, viewModelScope).also { it.start(saved) }
+            }
+            engine = eng
+
+            if (eng is ReflowEngine) {
+                eng.ready.first { it }
+            }
+            val startPage = eng.pageIndexOf(saved)
             _state.update {
                 it.copy(
                     isLoading = false,
                     title = book.title,
                     currentPage = startPage,
-                    pageCount = reflow.pageCount.value,
+                    pageCount = eng.pageCount.value,
                     pageReady = true,
                     theme = settings.theme,
+                    format = book.format,
                 )
             }
             viewModelScope.launch {
-                reflow.pageCount.collect { info ->
+                eng.pageCount.collect { info ->
                     _state.update { s -> s.copy(pageCount = info) }
                 }
             }
