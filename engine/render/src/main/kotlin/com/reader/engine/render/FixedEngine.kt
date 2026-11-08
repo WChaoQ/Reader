@@ -5,35 +5,51 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
-import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import android.util.LruCache
 import com.reader.core.model.Locator
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
-/** Fixed-layout PDF engine (architecture §8). PdfRenderer access is Mutex-serialized. */
+/**
+ * Fixed-layout PDF engine.
+ *
+ * PdfRenderer access and bitmap creation are serialized and performed on an IO dispatcher.
+ * The drawing callback only paints a cached bitmap; cache misses schedule a background render.
+ */
 class FixedEngine(
     private val file: File,
     private val pageWidthPx: Int,
     private val nightMode: Boolean = false,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val onPageRendered: () -> Unit = {},
 ) : ReaderEngine {
 
     private val pfd: ParcelFileDescriptor =
         ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
     private val renderer = PdfRenderer(pfd)
     private val mutex = Mutex()
+    private val renderScope = CoroutineScope(SupervisorJob() + ioDispatcher)
+    private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
+    private val renderJobs = ConcurrentHashMap<Int, Job>()
+    @Volatile private var closed = false
 
-    private val _pageCount = MutableStateFlow(PageCountInfo(exact = renderer.pageCount))
-    override val pageCount: StateFlow<PageCountInfo> = _pageCount.asStateFlow()
-
-    private val _ready = MutableStateFlow(true)
-    override val ready: StateFlow<Boolean> = _ready.asStateFlow()
+    private val bitmapCache = object : LruCache<Int, Bitmap>(MAX_CACHE_KB) {
+        override fun sizeOf(key: Int, value: Bitmap): Int =
+            (value.byteCount / 1024).coerceAtLeast(1)
+    }
 
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val nightFilter = ColorMatrixColorFilter(
@@ -47,60 +63,108 @@ class FixedEngine(
         ),
     )
 
+    private val pageTotal: Int = renderer.pageCount
+
+    private val _pageCount = kotlinx.coroutines.flow.MutableStateFlow(PageCountInfo(exact = pageTotal))
+    override val pageCount: kotlinx.coroutines.flow.StateFlow<PageCountInfo> = _pageCount
+
+    private val _ready = kotlinx.coroutines.flow.MutableStateFlow(true)
+    override val ready: kotlinx.coroutines.flow.StateFlow<Boolean> = _ready
+
     override fun locatorOf(pageIndex: Int): Locator {
-        val total = renderer.pageCount.coerceAtLeast(1)
+        val total = pageTotal.coerceAtLeast(1)
+        val page = pageIndex.coerceIn(0, total - 1)
         return Locator(
-            chapter = pageIndex.coerceIn(0, total - 1),
+            chapter = page,
             offset = 0,
-            progression = pageIndex.toFloat() / total,
+            progression = page.toFloat() / total,
         )
     }
 
     override fun pageIndexOf(locator: Locator): Int =
-        locator.chapter.coerceIn(0, (renderer.pageCount - 1).coerceAtLeast(0))
+        locator.chapter.coerceIn(0, (pageTotal - 1).coerceAtLeast(0))
 
     override fun drawPage(pageIndex: Int, canvas: Canvas, textColor: Int, backgroundColor: Int) {
         canvas.drawColor(backgroundColor)
-        if (pageIndex !in 0 until renderer.pageCount) return
-        if (!mutex.tryLock()) return
-        try {
-            renderer.openPage(pageIndex).use { page ->
-                val scale = pageWidthPx.toFloat() / page.width
-                val h = (page.height * scale).toInt().coerceAtLeast(1)
-                val w = pageWidthPx.coerceAtLeast(1)
-                val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                bmp.eraseColor(Color.WHITE)
-                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                paint.colorFilter = if (nightMode) nightFilter else null
-                canvas.drawBitmap(bmp, Matrix(), paint)
-                bmp.recycle()
-            }
-        } catch (_: Exception) {
-        } finally {
-            mutex.unlock()
+        if (closed || pageIndex !in 0 until pageTotal) return
+
+        val bitmap = bitmapCache.get(pageIndex)
+        if (bitmap == null) {
+            requestPage(pageIndex)
+            return
         }
+
+        paint.colorFilter = if (nightMode) nightFilter else null
+        val scale = minOf(
+            canvas.width.toFloat() / bitmap.width.coerceAtLeast(1),
+            canvas.height.toFloat() / bitmap.height.coerceAtLeast(1),
+        )
+        val width = bitmap.width * scale
+        val height = bitmap.height * scale
+        val left = (canvas.width - width) / 2f
+        val top = (canvas.height - height) / 2f
+        canvas.drawBitmap(bitmap, null, RectF(left, top, left + width, top + height), paint)
     }
 
-    override fun pageText(pageIndex: Int): String = ""
+    private fun requestPage(pageIndex: Int) {
+        if (closed || renderJobs.containsKey(pageIndex)) return
+        val job = renderScope.launch {
+            try {
+                val bitmap = renderBitmap(pageIndex, pageWidthPx)
+                if (bitmap != null && !closed) {
+                    bitmapCache.put(pageIndex, bitmap)
+                    onPageRendered()
+                } else {
+                    bitmap?.recycle()
+                }
+            } catch (_: Exception) {
+                // The reader remains usable; the page can be retried when requested again.
+            } finally {
+                renderJobs.remove(pageIndex)
+            }
+        }
+        renderJobs[pageIndex] = job
+    }
 
-    suspend fun renderThumbnail(pageIndex: Int, widthPx: Int): Bitmap? = mutex.withLock {
-        if (pageIndex !in 0 until renderer.pageCount) return null
+    private suspend fun renderBitmap(pageIndex: Int, targetWidth: Int): Bitmap? = mutex.withLock {
+        if (closed || pageIndex !in 0 until pageTotal) return null
         return try {
             renderer.openPage(pageIndex).use { page ->
-                val scale = widthPx.toFloat() / page.width
-                val h = (page.height * scale).toInt().coerceAtLeast(1)
-                val bmp = Bitmap.createBitmap(widthPx, h, Bitmap.Config.RGB_565)
-                bmp.eraseColor(Color.WHITE)
-                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                bmp
+                val width = targetWidth.coerceAtLeast(1)
+                val scale = width.toFloat() / page.width.coerceAtLeast(1)
+                val height = (page.height * scale).toInt().coerceAtLeast(1)
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+                bitmap.eraseColor(Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                bitmap
             }
         } catch (_: Exception) {
             null
         }
     }
 
+    suspend fun renderThumbnail(pageIndex: Int, widthPx: Int): Bitmap? =
+        renderBitmap(pageIndex, widthPx)
+
+    override fun pageText(pageIndex: Int): String = ""
+
     override fun close() {
-        renderer.close()
-        pfd.close()
+        if (closed) return
+        closed = true
+        renderJobs.values.forEach { it.cancel() }
+        renderJobs.clear()
+        renderScope.cancel()
+        bitmapCache.evictAll()
+        cleanupScope.launch {
+            mutex.withLock {
+                runCatching { renderer.close() }
+                runCatching { pfd.close() }
+            }
+            cleanupScope.cancel()
+        }
+    }
+
+    private companion object {
+        const val MAX_CACHE_KB = 24 * 1024
     }
 }
