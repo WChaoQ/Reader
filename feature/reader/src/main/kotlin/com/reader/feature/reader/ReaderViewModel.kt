@@ -107,6 +107,8 @@ class ReaderViewModel @Inject constructor(
     private var saveJob: Job? = null
     private var searchJob: Job? = null
     private var openJob: Job? = null
+    private var engineObserveJob: Job? = null
+    private var currentLocator: Locator = Locator(0, 0)
     private var pageWidth = 1080
     private var pageHeight = 1920
 
@@ -139,7 +141,7 @@ class ReaderViewModel @Inject constructor(
         pageHeight = heightPx
         if (_state.value.format != BookFormat.PDF) {
             openJob?.cancel()
-            openJob = viewModelScope.launch { open() }
+            openJob = viewModelScope.launch { open(currentLocator) }
         }
     }
 
@@ -152,8 +154,9 @@ class ReaderViewModel @Inject constructor(
             }
             is ReaderEvent.JumpToPage -> jump(event.page)
             is ReaderEvent.JumpToLocator -> {
+                currentLocator = event.locator
                 val page = engine?.pageIndexOf(event.locator) ?: 0
-                jump(page)
+                jump(page, updateLocator = false)
                 _state.update {
                     it.copy(mode = ReaderMode.Reading, tocVisible = false, bookmarksVisible = false, searchVisible = false, chromeVisible = false)
                 }
@@ -188,7 +191,7 @@ class ReaderViewModel @Inject constructor(
 
     private fun addBookmark() {
         val eng = engine ?: return
-        val locator = eng.locatorOf(_state.value.currentPage)
+        val locator = currentLocator
         val snippet = eng.pageText(_state.value.currentPage).take(120)
         viewModelScope.launch {
             bookmarkRepository.add(bookId, locator, snippet)
@@ -255,13 +258,15 @@ class ReaderViewModel @Inject constructor(
         if (count <= 0) return
         val next = (_state.value.currentPage + delta).coerceIn(0, count - 1)
         if (next == _state.value.currentPage) return
+        currentLocator = eng.locatorOf(next)
         _state.update { it.copy(currentPage = next, chromeVisible = false) }
         scheduleSaveProgress()
     }
 
-    private fun jump(page: Int) {
+    private fun jump(page: Int, updateLocator: Boolean = true) {
         val count = engine?.pageCount?.value?.display ?: return
         val next = page.coerceIn(0, (count - 1).coerceAtLeast(0))
+        if (updateLocator) currentLocator = engine?.locatorOf(next) ?: currentLocator
         _state.update { it.copy(currentPage = next, mode = ReaderMode.Reading) }
         scheduleSaveProgress()
     }
@@ -276,14 +281,16 @@ class ReaderViewModel @Inject constructor(
 
     private fun saveProgressNow() {
         val eng = engine ?: return
-        val locator = eng.locatorOf(_state.value.currentPage)
+        val locator = currentLocator
         viewModelScope.launch {
             progressRepository.save(bookId, locator)
             bookRepository.updateLastRead(bookId, System.currentTimeMillis())
         }
     }
 
-    private suspend fun open() {
+    private suspend fun open(startLocator: Locator? = null) {
+        engineObserveJob?.cancel()
+        engineObserveJob = null
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
         searchJob?.cancel()
         engine?.close()
@@ -302,7 +309,8 @@ class ReaderViewModel @Inject constructor(
                     return
                 }
 
-            val saved = progressRepository.get(bookId) ?: Locator(0, 0)
+            val saved = startLocator ?: progressRepository.get(bookId) ?: Locator(0, 0)
+            currentLocator = saved
             var toc: List<TocEntry> = emptyList()
             val eng: ReaderEngine = if (book.format == BookFormat.PDF) {
                 withContext(dispatchers.io) {
@@ -355,8 +363,11 @@ class ReaderViewModel @Inject constructor(
                     toc = toc,
                 )
             }
-            viewModelScope.launch {
-                eng.pageCount.collect { info -> _state.update { s -> s.copy(pageCount = info) } }
+            engineObserveJob = viewModelScope.launch {
+                eng.pageCount.collect { info ->
+                    val resolvedPage = eng.pageIndexOf(currentLocator)
+                    _state.update { s -> s.copy(pageCount = info, currentPage = resolvedPage) }
+                }
             }
             bookRepository.updateLastRead(bookId, System.currentTimeMillis())
         } catch (cancelled: CancellationException) {
@@ -374,7 +385,8 @@ class ReaderViewModel @Inject constructor(
 
     override fun onCleared() {
         saveProgressNow()
-        engine?.close()
+        engineObserveJob?.cancel()
+        engine?.close() ?: heldSource?.close()
         heldSource = null
         super.onCleared()
     }
