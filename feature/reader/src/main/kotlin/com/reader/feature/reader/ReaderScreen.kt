@@ -3,6 +3,7 @@ package com.reader.feature.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -20,10 +21,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -31,11 +29,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -167,91 +162,92 @@ fun ReaderRoute(
                 state.isLoading || !state.pageReady -> CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
                 )
-                state.mode == ReaderMode.Overview -> OverviewGrid(
-                    state = state,
-                    onPageClick = { viewModel.onEvent(ReaderEvent.JumpToPage(it)) },
-                    pagePreview = viewModel::pagePreview,
-                )
                 else -> BoxWithConstraints(
                     modifier = Modifier.fillMaxSize().background(stageBackground),
                 ) {
-                    val pageWidth = maxWidth * 0.79f
-                    val pageHeight = maxHeight * 0.94f
-                    LaunchedEffect(pageWidth, pageHeight) {
-                        val w = with(density) { pageWidth.roundToPx() }
-                        val h = with(density) { pageHeight.roundToPx() }
+                    // Preview mode is visual only: pagination always uses the full viewport.
+                    LaunchedEffect(maxWidth, maxHeight) {
+                        val w = with(density) { maxWidth.roundToPx() }
+                        val h = with(density) { maxHeight.roundToPx() }
                         viewModel.onViewportSized(w, h)
                     }
-                    val pageWidthPx = with(density) { pageWidth.toPx() }
+                    val previewWidth = maxWidth * 0.72f
+                    val previewHeight = maxHeight * 0.90f
+                    val animatedWidth by animateDpAsState(
+                        targetValue = if (state.adjacentPagesVisible) previewWidth else maxWidth,
+                        label = "reader-page-width",
+                    )
+                    val animatedHeight by animateDpAsState(
+                        targetValue = if (state.adjacentPagesVisible) previewHeight else maxHeight,
+                        label = "reader-page-height",
+                    )
                     val current = state.currentPage
                     val total = state.pageCount.available
-
-                    // Three lightweight page surfaces create the Google Books / Overview
-                    // spatial relationship. Only the current page and its immediate neighbours
-                    // are drawn; no book-cover thumbnails or full-document snapshots are used.
+                    val neighbourOffset = with(density) { animatedWidth.toPx() * 0.82f + 12.dp.toPx() }
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(current, total) {
-                                var dragDistance = 0f
-                                detectDragGestures(
-                                    onDragStart = { dragDistance = 0f },
-                                    onDrag = { change, amount ->
-                                        dragDistance += amount.x
-                                        change.consume()
-                                    },
-                                    onDragEnd = {
-                                        val threshold = size.width * 0.16f
+                        modifier = Modifier.fillMaxSize().then(
+                            if (state.adjacentPagesVisible) {
+                                Modifier.pointerInput(current, total) {
+                                    var dragDistance = 0f
+                                    detectDragGestures(
+                                        onDragStart = { dragDistance = 0f },
+                                        onDrag = { change, amount ->
+                                            dragDistance += amount.x
+                                            change.consume()
+                                        },
+                                        onDragEnd = {
+                                            val threshold = size.width * 0.12f
+                                            when {
+                                                dragDistance <= -threshold -> viewModel.onEvent(ReaderEvent.TapRight)
+                                                dragDistance >= threshold -> viewModel.onEvent(ReaderEvent.TapLeft)
+                                            }
+                                        },
+                                        onDragCancel = { dragDistance = 0f },
+                                    )
+                                }
+                            } else {
+                                Modifier.pointerInput(current, total) {
+                                    detectTapGestures { point ->
                                         when {
-                                            dragDistance <= -threshold -> viewModel.onEvent(ReaderEvent.TapRight)
-                                            dragDistance >= threshold -> viewModel.onEvent(ReaderEvent.TapLeft)
+                                            point.x < size.width * 0.30f -> viewModel.onEvent(ReaderEvent.TapLeft)
+                                            point.x > size.width * 0.70f -> viewModel.onEvent(ReaderEvent.TapRight)
+                                            else -> viewModel.onEvent(ReaderEvent.TapCenter)
                                         }
-                                    },
-                                    onDragCancel = { dragDistance = 0f },
-                                )
-                            }
-                            .pointerInput(current, total) {
-                                detectTapGestures { point ->
-                                    when {
-                                        point.x < size.width * 0.30f -> viewModel.onEvent(ReaderEvent.TapLeft)
-                                        point.x > size.width * 0.70f -> viewModel.onEvent(ReaderEvent.TapRight)
-                                        else -> viewModel.onEvent(ReaderEvent.TapCenter)
                                     }
                                 }
                             },
+                        ),
                     ) {
-                        if (current > 0) {
+                        if (state.adjacentPagesVisible && current > 0) {
                             ReaderPageCard(
-                                page = current - 1,
-                                width = pageWidth,
-                                height = pageHeight,
-                                background = pageBackground,
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .offset { IntOffset((-pageWidthPx - with(density) { 14.dp.toPx() }).roundToInt(), 0) }
-                                    .graphicsLayer { alpha = 0.72f; scaleX = 0.96f; scaleY = 0.96f },
+                                page = current - 1, width = animatedWidth, height = animatedHeight,
+                                background = pageBackground, showFrame = true,
+                                modifier = Modifier.align(Alignment.Center)
+                                    .offset { IntOffset(-neighbourOffset.roundToInt(), 0) }
+                                    .graphicsLayer { alpha = 0.88f; scaleX = 0.98f; scaleY = 0.98f }
+                                    .clickable { viewModel.onEvent(ReaderEvent.SelectPage(current - 1)) },
                                 drawPage = viewModel::drawPage,
                             )
                         }
-                        if (current + 1 < total) {
+                        if (state.adjacentPagesVisible && current + 1 < total) {
                             ReaderPageCard(
-                                page = current + 1,
-                                width = pageWidth,
-                                height = pageHeight,
-                                background = pageBackground,
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .offset { IntOffset((pageWidthPx + with(density) { 14.dp.toPx() }).roundToInt(), 0) }
-                                    .graphicsLayer { alpha = 0.72f; scaleX = 0.96f; scaleY = 0.96f },
+                                page = current + 1, width = animatedWidth, height = animatedHeight,
+                                background = pageBackground, showFrame = true,
+                                modifier = Modifier.align(Alignment.Center)
+                                    .offset { IntOffset(neighbourOffset.roundToInt(), 0) }
+                                    .graphicsLayer { alpha = 0.88f; scaleX = 0.98f; scaleY = 0.98f }
+                                    .clickable { viewModel.onEvent(ReaderEvent.SelectPage(current + 1)) },
                                 drawPage = viewModel::drawPage,
                             )
                         }
                         ReaderPageCard(
-                            page = current,
-                            width = pageWidth,
-                            height = pageHeight,
-                            background = pageBackground,
-                            modifier = Modifier.align(Alignment.Center),
+                            page = current, width = animatedWidth, height = animatedHeight,
+                            background = pageBackground, showFrame = state.adjacentPagesVisible,
+                            modifier = Modifier.align(Alignment.Center).then(
+                                if (state.adjacentPagesVisible) Modifier.clickable {
+                                    viewModel.onEvent(ReaderEvent.SelectPage(current))
+                                } else Modifier,
+                            ),
                             drawPage = viewModel::drawPage,
                         )
                     }
@@ -371,15 +367,19 @@ private fun ReaderPageCard(
     modifier: Modifier = Modifier,
     drawPage: (Int, android.graphics.Canvas) -> Unit,
 ) {
+    showFrame: Boolean = false,
+) {
     Surface(
         modifier = modifier
             .width(width)
             .height(height)
-            .clip(MaterialTheme.shapes.small)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small),
+            .then(
+                if (showFrame) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
+                else Modifier,
+            ),
         color = background,
         tonalElevation = 0.dp,
-        shadowElevation = 1.dp,
+        shadowElevation = if (showFrame) 2.dp else 0.dp,
     ) {
         PageCanvas(background = background, modifier = Modifier.fillMaxSize()) { canvas ->
             drawPage(page, canvas)
@@ -412,56 +412,6 @@ private fun ReaderProgressBar(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun OverviewGrid(
-    state: ReaderUiState,
-    onPageClick: (Int) -> Unit,
-    pagePreview: (Int) -> String,
-) {
-    val count = state.pageCount.available
-    val pages = (0 until count).toList()
-    val gridState = rememberLazyGridState()
-    LaunchedEffect(state.currentPage) {
-        if (count > 0) gridState.scrollToItem(state.currentPage.coerceIn(0, count - 1))
-    }
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(120.dp),
-        state = gridState,
-        contentPadding = PaddingValues(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        items(pages, key = { it }) { page ->
-            val selected = page == state.currentPage
-            Card(
-                modifier = Modifier.fillMaxWidth()
-                    .then(
-                        if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CardDefaults.shape)
-                        else Modifier,
-                    )
-                    .clickable { onPageClick(page) },
-                colors = CardDefaults.cardColors(
-                    containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.surfaceVariant,
-                ),
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Text("${page + 1}", style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary)
-                    Text(
-                        text = pagePreview(page).ifBlank { "…" },
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 4,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 4.dp).height(64.dp),
-                    )
-                }
             }
         }
     }
