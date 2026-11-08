@@ -10,6 +10,7 @@ import com.reader.engine.format.BookSource
 import java.io.File
 import java.io.InputStream
 import java.util.zip.ZipFile
+import kotlinx.coroutines.CancellationException
 
 class EpubBookSource(
     private val file: File,
@@ -31,10 +32,11 @@ class EpubBookSource(
         spineHrefs = opf.spine.mapNotNull { id -> opf.manifest[id]?.href }.map { href ->
             if (opfDir.isEmpty()) href else ZipSafe.resolveHref(opfPath, href)
         }
+        require(spineHrefs.isNotEmpty()) { "EPUB spine is empty or invalid" }
     }
 
     override val format: BookFormat = BookFormat.EPUB
-    override val chapterCount: Int = spineHrefs.size.coerceAtLeast(1)
+    override val chapterCount: Int = spineHrefs.size
 
     override suspend fun metadata(): BookMetadata =
         BookMetadata(
@@ -62,6 +64,8 @@ class EpubBookSource(
                 title = href.substringAfterLast('/').substringBeforeLast('.'),
                 blocks = blocks,
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (t: Throwable) {
             Chapter(
                 index = index,
