@@ -6,10 +6,8 @@ import com.reader.core.model.Chapter
 import com.reader.core.model.ResourceRef
 import com.reader.core.model.TocEntry
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.io.InputStream
