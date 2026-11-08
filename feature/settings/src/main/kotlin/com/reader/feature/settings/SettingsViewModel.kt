@@ -2,8 +2,8 @@ package com.reader.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.reader.core.datastore.ReaderSettings
-import com.reader.core.datastore.SettingsRepository
+import com.reader.core.data.ReaderPreferencesRepository
+import com.reader.core.model.ReaderSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +13,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository,
+    private val settingsRepository: ReaderPreferencesRepository,
 ) : ViewModel() {
 
     val settings: StateFlow<ReaderSettings> = settingsRepository.settings
