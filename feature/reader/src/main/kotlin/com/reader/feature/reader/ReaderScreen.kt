@@ -160,6 +160,7 @@ fun ReaderRoute(
                 ReaderProgressBar(
                     currentPage = state.currentPage,
                     pageCount = state.pageCount.display,
+                    availablePageCount = state.pageCount.available,
                     onPageSelected = { viewModel.onEvent(ReaderEvent.JumpToPage(it)) },
                 )
             }
@@ -192,7 +193,7 @@ fun ReaderRoute(
                     }
                     val pageWidthPx = with(density) { pageWidth.toPx() }
                     val current = state.currentPage
-                    val total = state.pageCount.display
+                    val total = state.pageCount.available
 
                     // Three lightweight page surfaces create the Google Books / Overview
                     // spatial relationship. Only the current page and its immediate neighbours
@@ -399,6 +400,7 @@ private fun ReaderPageCard(
 private fun ReaderProgressBar(
     currentPage: Int,
     pageCount: Int,
+    availablePageCount: Int,
     onPageSelected: (Int) -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
@@ -406,7 +408,8 @@ private fun ReaderProgressBar(
             Slider(
                 value = currentPage.toFloat(),
                 onValueChange = { onPageSelected(it.roundToInt()) },
-                valueRange = 0f..(pageCount - 1).coerceAtLeast(1).toFloat(),
+                valueRange = 0f..(availablePageCount - 1).coerceAtLeast(1).toFloat(),
+                enabled = availablePageCount > 1,
                 steps = 0,
                 modifier = Modifier.fillMaxWidth().height(28.dp),
             )
@@ -429,7 +432,7 @@ private fun OverviewGrid(
     onPageClick: (Int) -> Unit,
     pagePreview: (Int) -> String,
 ) {
-    val count = state.pageCount.display
+    val count = state.pageCount.available
     val pages = (0 until count).toList()
     val gridState = rememberLazyGridState()
     LaunchedEffect(state.currentPage) {
