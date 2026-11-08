@@ -18,11 +18,13 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -45,6 +47,7 @@ import com.reader.core.model.Book
 @Composable
 fun LibraryRoute(
     onOpenBook: (String) -> Unit,
+    onOpenSettings: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -72,7 +75,14 @@ fun LibraryRoute(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("书架") })
+            TopAppBar(
+                title = { Text("书架") },
+                actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "设置")
+                    }
+                },
+            )
         },
         floatingActionButton = {
             FloatingActionButton(
@@ -100,7 +110,7 @@ fun LibraryRoute(
         ) {
             when {
                 state.isLoading -> {
-                    CircularProgressIndicator(Modifier = Modifier.align(Alignment.Center))
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
                 state.books.isEmpty() -> {
                     Text(
@@ -128,7 +138,7 @@ fun LibraryRoute(
                 }
             }
             if (state.isImporting) {
-                CircularProgressIndicator(Modifier = Modifier.align(Alignment.Center))
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
         }
     }

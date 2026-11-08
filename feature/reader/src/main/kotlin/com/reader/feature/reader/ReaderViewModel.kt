@@ -11,6 +11,7 @@ import com.reader.core.data.ProgressRepository
 import com.reader.core.datastore.SettingsRepository
 import com.reader.core.model.BookFormat
 import com.reader.core.model.Locator
+import com.reader.core.model.TocEntry
 import com.reader.core.storage.BookFileStore
 import com.reader.engine.format.FormatRegistry
 import com.reader.engine.layout.LayoutConfig
@@ -30,6 +31,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+enum class ReaderMode { Reading, Overview }
+
 data class ReaderUiState(
     val title: String = "",
     val isLoading: Boolean = true,
@@ -40,6 +43,9 @@ data class ReaderUiState(
     val pageReady: Boolean = false,
     val theme: String = "day",
     val format: BookFormat? = null,
+    val mode: ReaderMode = ReaderMode.Reading,
+    val toc: List<TocEntry> = emptyList(),
+    val tocVisible: Boolean = false,
 )
 
 sealed interface ReaderEvent {
@@ -47,6 +53,9 @@ sealed interface ReaderEvent {
     data object TapRight : ReaderEvent
     data object TapCenter : ReaderEvent
     data class JumpToPage(val page: Int) : ReaderEvent
+    data class JumpToLocator(val locator: Locator) : ReaderEvent
+    data object ToggleOverview : ReaderEvent
+    data object ToggleToc : ReaderEvent
     data object ForceSaveProgress : ReaderEvent
 }
 
@@ -102,8 +111,24 @@ class ReaderViewModel @Inject constructor(
         when (event) {
             ReaderEvent.TapLeft -> turn(-1)
             ReaderEvent.TapRight -> turn(1)
-            ReaderEvent.TapCenter -> _state.update { it.copy(chromeVisible = !it.chromeVisible) }
+            ReaderEvent.TapCenter -> _state.update {
+                it.copy(chromeVisible = !it.chromeVisible, tocVisible = false)
+            }
             is ReaderEvent.JumpToPage -> jump(event.page)
+            is ReaderEvent.JumpToLocator -> {
+                val page = engine?.pageIndexOf(event.locator) ?: 0
+                jump(page)
+                _state.update {
+                    it.copy(mode = ReaderMode.Reading, tocVisible = false, chromeVisible = false)
+                }
+            }
+            ReaderEvent.ToggleOverview -> _state.update {
+                val next = if (it.mode == ReaderMode.Overview) ReaderMode.Reading else ReaderMode.Overview
+                it.copy(mode = next, chromeVisible = next == ReaderMode.Overview, tocVisible = false)
+            }
+            ReaderEvent.ToggleToc -> _state.update {
+                it.copy(tocVisible = !it.tocVisible, chromeVisible = true)
+            }
             ReaderEvent.ForceSaveProgress -> saveProgressNow()
         }
     }
@@ -112,7 +137,11 @@ class ReaderViewModel @Inject constructor(
         engine?.drawPage(pageIndex, canvas, textColorArgb, backgroundColorArgb)
     }
 
+    fun pagePreview(pageIndex: Int): String =
+        engine?.pageText(pageIndex)?.take(120)?.replace('\n', ' ') ?: ""
+
     private fun turn(delta: Int) {
+        if (_state.value.mode == ReaderMode.Overview) return
         val eng = engine ?: return
         val count = eng.pageCount.value.display
         if (count <= 0) return
@@ -125,7 +154,7 @@ class ReaderViewModel @Inject constructor(
     private fun jump(page: Int) {
         val count = engine?.pageCount?.value?.display ?: return
         val next = page.coerceIn(0, (count - 1).coerceAtLeast(0))
-        _state.update { it.copy(currentPage = next) }
+        _state.update { it.copy(currentPage = next, mode = ReaderMode.Reading) }
         scheduleSaveProgress()
     }
 
@@ -170,14 +199,20 @@ class ReaderViewModel @Inject constructor(
             }
 
             val saved = progressRepository.get(bookId) ?: Locator(0, 0)
+            var toc: List<TocEntry> = emptyList()
             val eng: ReaderEngine = if (book.format == BookFormat.PDF) {
                 FixedEngine(
                     file = file,
                     pageWidthPx = pageWidth,
                     nightMode = settings.theme == "night",
-                )
+                ).also {
+                    toc = (0 until it.pageCount.value.display).map { page ->
+                        TocEntry("第 ${page + 1} 页", Locator(page, 0))
+                    }
+                }
             } else {
                 val source = formatRegistry.open(file, file.name)
+                toc = runCatching { source.toc() }.getOrDefault(emptyList())
                 val config = LayoutConfig(
                     pageWidthPx = pageWidth,
                     pageHeightPx = pageHeight,
@@ -203,6 +238,7 @@ class ReaderViewModel @Inject constructor(
                     pageReady = true,
                     theme = settings.theme,
                     format = book.format,
+                    toc = toc,
                 )
             }
             viewModelScope.launch {
