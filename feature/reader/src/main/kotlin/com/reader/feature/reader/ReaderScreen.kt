@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -52,7 +51,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -98,7 +96,7 @@ fun ReaderRoute(
         containerColor = stageBackground,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            if (state.chromeVisible || state.mode == ReaderMode.Overview) {
+            if (state.chromeVisible) {
                 TopAppBar(
                     title = {
                         Text(
@@ -109,12 +107,8 @@ fun ReaderRoute(
                     },
                     navigationIcon = {
                         IconButton(onClick = {
-                            if (state.mode == ReaderMode.Overview) {
-                                viewModel.onEvent(ReaderEvent.ToggleOverview)
-                            } else {
-                                viewModel.onEvent(ReaderEvent.ForceSaveProgress)
-                                onBack()
-                            }
+                            viewModel.onEvent(ReaderEvent.ForceSaveProgress)
+                            onBack()
                         }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                         }
@@ -131,9 +125,6 @@ fun ReaderRoute(
                         }
                         IconButton(onClick = { viewModel.onEvent(ReaderEvent.ToggleToc) }) {
                             Icon(Icons.Default.List, contentDescription = "目录")
-                        }
-                        IconButton(onClick = { viewModel.onEvent(ReaderEvent.ToggleOverview) }) {
-                            Icon(Icons.Default.GridView, contentDescription = "总览")
                         }
                     },
                 )
@@ -365,9 +356,8 @@ private fun ReaderPageCard(
     height: androidx.compose.ui.unit.Dp,
     background: Color,
     modifier: Modifier = Modifier,
-    drawPage: (Int, android.graphics.Canvas) -> Unit,
-) {
     showFrame: Boolean = false,
+    drawPage: (Int, android.graphics.Canvas) -> Unit,
 ) {
     Surface(
         modifier = modifier
