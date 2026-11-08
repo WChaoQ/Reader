@@ -183,15 +183,14 @@ fun ReaderRoute(
                 else -> BoxWithConstraints(
                     modifier = Modifier.fillMaxSize().background(stageBackground),
                 ) {
-                    LaunchedEffect(maxWidth, maxHeight) {
-                        val w = with(density) { maxWidth.roundToPx() }
-                        val h = with(density) { maxHeight.roundToPx() }
+                    val pageWidth = maxWidth * 0.79f
+                    val pageHeight = maxHeight * 0.94f
+                    LaunchedEffect(pageWidth, pageHeight) {
+                        val w = with(density) { pageWidth.roundToPx() }
+                        val h = with(density) { pageHeight.roundToPx() }
                         viewModel.onViewportSized(w, h)
                     }
-
-                    val pageWidth = maxWidth * 0.79f
                     val pageWidthPx = with(density) { pageWidth.toPx() }
-                    val pageHeight = maxHeight * 0.94f
                     val current = state.currentPage
                     val total = state.pageCount.display
 
