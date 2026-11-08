@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reader.core.ui.PageCanvas
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -161,16 +162,15 @@ fun ReaderRoute(
                 else -> BoxWithConstraints(
                     modifier = Modifier.fillMaxSize().background(stageBackground),
                 ) {
-                    // Pagination remains based on the full viewport. Only the rendered
-                    // page cards move and scale, matching the supplied HTML interaction.
-                    LaunchedEffect(maxWidth, maxHeight) {
-                        val w = with(density) { maxWidth.roundToPx() }
-                        val h = with(density) { maxHeight.roundToPx() }
+                    // Pagination remains based on the page's unscaled dimensions.
+                    val pageWidth = minOf(maxWidth, 520.dp)
+                    val pageHeight = maxHeight
+                    LaunchedEffect(pageWidth, pageHeight) {
+                        val w = with(density) { pageWidth.roundToPx() }
+                        val h = with(density) { pageHeight.roundToPx() }
                         viewModel.onViewportSized(w, h)
                     }
 
-                    val pageWidth = minOf(maxWidth, 520.dp)
-                    val pageHeight = maxHeight
                     val current = state.currentPage
                     val total = state.pageCount.available
                     val previewProgress by animateFloatAsState(
