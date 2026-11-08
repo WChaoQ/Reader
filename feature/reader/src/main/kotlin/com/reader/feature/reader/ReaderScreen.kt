@@ -1,7 +1,9 @@
 package com.reader.feature.reader
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,10 +11,14 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -38,8 +44,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -49,15 +57,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reader.core.model.Locator
 import com.reader.core.ui.PageCanvas
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,13 +90,19 @@ fun ReaderRoute(
         }
     }
 
-    val bg = when (state.theme) {
-        "night" -> Color(0xFF121212)
-        "sepia" -> Color(0xFFF5E6C8)
-        else -> Color(0xFFFAFAFA)
+    val pageBackground = when (state.theme) {
+        "night" -> Color(0xFF000000)
+        "sepia" -> Color(0xFFF5EBD5)
+        else -> Color(0xFFFFFFFF)
+    }
+    val stageBackground = when (state.theme) {
+        "night" -> Color(0xFF121218)
+        "sepia" -> Color(0xFFE8DDC5)
+        else -> Color(0xFFEDEDF2)
     }
 
     Scaffold(
+        containerColor = stageBackground,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             if (state.chromeVisible || state.mode == ReaderMode.Overview) {
@@ -98,6 +117,8 @@ fun ReaderRoute(
                                     if (!pc.isExact) append("~")
                                 }
                             },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     },
                     navigationIcon = {
@@ -132,12 +153,23 @@ fun ReaderRoute(
                 )
             }
         },
+        bottomBar = {
+            if (state.chromeVisible && state.mode == ReaderMode.Reading &&
+                state.pageCount.display > 0
+            ) {
+                ReaderProgressBar(
+                    currentPage = state.currentPage,
+                    pageCount = state.pageCount.display,
+                    onPageSelected = { viewModel.onEvent(ReaderEvent.JumpToPage(it)) },
+                )
+            }
+        },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
                 state.error != null -> Text(
                     text = state.error!!,
-                    modifier = Modifier.align(Alignment.Center),
+                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 state.isLoading || !state.pageReady -> CircularProgressIndicator(
@@ -148,26 +180,90 @@ fun ReaderRoute(
                     onPageClick = { viewModel.onEvent(ReaderEvent.JumpToPage(it)) },
                     pagePreview = viewModel::pagePreview,
                 )
-                else -> BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                else -> BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize().background(stageBackground),
+                ) {
                     LaunchedEffect(maxWidth, maxHeight) {
                         val w = with(density) { maxWidth.roundToPx() }
                         val h = with(density) { maxHeight.roundToPx() }
                         viewModel.onViewportSized(w, h)
                     }
-                    val page = state.currentPage
-                    PageCanvas(
-                        background = bg,
-                        modifier = Modifier.fillMaxSize().pointerInput(page) {
-                            detectTapGestures { offset ->
-                                val w = size.width
-                                when {
-                                    offset.x < w * 0.3f -> viewModel.onEvent(ReaderEvent.TapLeft)
-                                    offset.x > w * 0.7f -> viewModel.onEvent(ReaderEvent.TapRight)
-                                    else -> viewModel.onEvent(ReaderEvent.TapCenter)
-                                }
+
+                    val pageWidth = maxWidth * 0.79f
+                    val pageWidthPx = with(density) { pageWidth.toPx() }
+                    val pageHeight = maxHeight * 0.94f
+                    val current = state.currentPage
+                    val total = state.pageCount.display
+
+                    // Three lightweight page surfaces create the Google Books / Overview
+                    // spatial relationship. Only the current page and its immediate neighbours
+                    // are drawn; no book-cover thumbnails or full-document snapshots are used.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(current, total) {
+                                var dragDistance = 0f
+                                detectDragGestures(
+                                    onDragStart = { dragDistance = 0f },
+                                    onDrag = { change, amount ->
+                                        dragDistance += amount.x
+                                        change.consume()
+                                    },
+                                    onDragEnd = {
+                                        val threshold = size.width * 0.16f
+                                        when {
+                                            dragDistance <= -threshold -> viewModel.onEvent(ReaderEvent.TapRight)
+                                            dragDistance >= threshold -> viewModel.onEvent(ReaderEvent.TapLeft)
+                                        }
+                                    },
+                                    onDragCancel = { dragDistance = 0f },
+                                )
                             }
-                        },
-                    ) { canvas -> viewModel.drawPage(page, canvas) }
+                            .pointerInput(current, total) {
+                                detectTapGestures { point ->
+                                    when {
+                                        point.x < size.width * 0.30f -> viewModel.onEvent(ReaderEvent.TapLeft)
+                                        point.x > size.width * 0.70f -> viewModel.onEvent(ReaderEvent.TapRight)
+                                        else -> viewModel.onEvent(ReaderEvent.TapCenter)
+                                    }
+                                }
+                            },
+                    ) {
+                        if (current > 0) {
+                            ReaderPageCard(
+                                page = current - 1,
+                                width = pageWidth,
+                                height = pageHeight,
+                                background = pageBackground,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .offset { IntOffset((-pageWidthPx - with(density) { 14.dp.toPx() }).roundToInt(), 0) }
+                                    .graphicsLayer { alpha = 0.72f; scaleX = 0.96f; scaleY = 0.96f },
+                                drawPage = viewModel::drawPage,
+                            )
+                        }
+                        if (current + 1 < total) {
+                            ReaderPageCard(
+                                page = current + 1,
+                                width = pageWidth,
+                                height = pageHeight,
+                                background = pageBackground,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .offset { IntOffset((pageWidthPx + with(density) { 14.dp.toPx() }).roundToInt(), 0) }
+                                    .graphicsLayer { alpha = 0.72f; scaleX = 0.96f; scaleY = 0.96f },
+                                drawPage = viewModel::drawPage,
+                            )
+                        }
+                        ReaderPageCard(
+                            page = current,
+                            width = pageWidth,
+                            height = pageHeight,
+                            background = pageBackground,
+                            modifier = Modifier.align(Alignment.Center),
+                            drawPage = viewModel::drawPage,
+                        )
+                    }
                 }
             }
         }
@@ -180,6 +276,9 @@ fun ReaderRoute(
         ) {
             Text("目录", style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            if (state.toc.isEmpty()) {
+                Text("此书暂无目录", modifier = Modifier.padding(16.dp))
+            }
             LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                 itemsIndexed(state.toc, key = { index, _ -> index }) { _, entry ->
                     Text(
@@ -267,6 +366,59 @@ fun ReaderRoute(
                         Text(hit.snippet, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderPageCard(
+    page: Int,
+    width: androidx.compose.ui.unit.Dp,
+    height: androidx.compose.ui.unit.Dp,
+    background: Color,
+    modifier: Modifier = Modifier,
+    drawPage: (Int, android.graphics.Canvas) -> Unit,
+) {
+    Surface(
+        modifier = modifier
+            .width(width)
+            .height(height)
+            .clip(MaterialTheme.shapes.small)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small),
+        color = background,
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
+    ) {
+        PageCanvas(background = background, modifier = Modifier.fillMaxSize()) { canvas ->
+            drawPage(page, canvas)
+        }
+    }
+}
+
+@Composable
+private fun ReaderProgressBar(
+    currentPage: Int,
+    pageCount: Int,
+    onPageSelected: (Int) -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+            Slider(
+                value = currentPage.toFloat(),
+                onValueChange = { onPageSelected(it.roundToInt()) },
+                valueRange = 0f..(pageCount - 1).coerceAtLeast(1).toFloat(),
+                steps = 0,
+                modifier = Modifier.fillMaxWidth().height(28.dp),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("第 ${currentPage + 1} 页", style = MaterialTheme.typography.labelMedium)
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "${currentPage + 1} / $pageCount",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
