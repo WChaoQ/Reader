@@ -3,7 +3,6 @@ package com.reader.engine.layout
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
-import com.reader.core.model.Block
 import com.reader.core.model.Locator
 import com.reader.engine.format.BookSource
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +60,7 @@ class SimplePaginator @Inject constructor() : Paginator {
             isAntiAlias = true
             textSize = config.textSizePx
         }
-        val text = blocksToPlain(blocks)
+        val text = DocumentTextBuilder.build(blocks)
         if (text.isEmpty()) {
             return listOf(PageSlice(0, 0, 0, 0))
         }
@@ -99,39 +98,4 @@ class SimplePaginator @Inject constructor() : Paginator {
         return pages.ifEmpty { listOf(PageSlice(0, 0, 0, text.length)) }
     }
 
-    private fun blocksToPlain(blocks: List<Block>): String = buildString {
-        for (block in blocks) {
-            when (block) {
-                is Block.Paragraph -> {
-                    if (isNotEmpty()) append("\n\n")
-                    append(block.text)
-                }
-                is Block.Heading -> {
-                    if (isNotEmpty()) append("\n\n")
-                    append(block.text)
-                }
-                is Block.Quote -> {
-                    if (isNotEmpty()) append("\n\n")
-                    append(blocksToPlain(block.children))
-                }
-                is Block.ListItem -> {
-                    if (isNotEmpty()) append("\n")
-                    append(if (block.ordered) "${block.index}. " else "• ")
-                    append(blocksToPlain(block.children))
-                }
-                is Block.CodeBlock -> {
-                    if (isNotEmpty()) append("\n\n")
-                    append(block.text)
-                }
-                is Block.Image -> {
-                    if (isNotEmpty()) append("\n\n")
-                    append("[${block.alt ?: "image"}]")
-                }
-                is Block.Divider -> {
-                    if (isNotEmpty()) append("\n\n")
-                    append("———")
-                }
-            }
-        }
-    }
 }
