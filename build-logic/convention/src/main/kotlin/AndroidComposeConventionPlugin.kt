@@ -1,4 +1,5 @@
 import com.android.build.api.dsl.ApplicationExtension
+import com.android.build.api.dsl.CommonExtension
 import com.android.build.api.dsl.LibraryExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -13,15 +14,14 @@ class AndroidComposeConventionPlugin : Plugin<Project> {
 
             val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 
-            val commonExtension = extensions.findByType(ApplicationExtension::class.java)
+            // ApplicationExtension / LibraryExtension share CommonExtension; use that
+            // so buildFeatures.compose resolves at compile time for the convention plugin.
+            val android = extensions.findByType(ApplicationExtension::class.java)
                 ?: extensions.findByType(LibraryExtension::class.java)
                 ?: error("Compose convention requires Android Application or Library plugin")
 
-            commonExtension.apply {
-                buildFeatures {
-                    compose = true
-                }
-            }
+            @Suppress("UNCHECKED_CAST")
+            (android as CommonExtension<*, *, *, *, *, *>).buildFeatures.compose = true
 
             dependencies {
                 val bom = libs.findLibrary("androidx-compose-bom").get()
