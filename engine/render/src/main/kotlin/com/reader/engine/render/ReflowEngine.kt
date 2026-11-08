@@ -194,7 +194,19 @@ class ReflowEngine(
 
         val top = layout.getLineTop(slice.startLine)
         val bottom = layout.getLineBottom(slice.endLine)
+        // Scale the already-paginated page into the target surface. Adjacent-page
+        // preview must shrink the whole page, not crop the fixed-width text layout.
+        val scale = minOf(
+            canvas.width.toFloat() / config.pageWidthPx.coerceAtLeast(1),
+            canvas.height.toFloat() / config.pageHeightPx.coerceAtLeast(1),
+        )
+        val scaledWidth = config.pageWidthPx * scale
+        val scaledHeight = config.pageHeightPx * scale
+        val offsetX = (canvas.width - scaledWidth) / 2f
+        val offsetY = (canvas.height - scaledHeight) / 2f
         val saveCount = canvas.save()
+        canvas.translate(offsetX, offsetY)
+        canvas.scale(scale, scale)
         canvas.translate(config.paddingHorizontalPx.toFloat(), config.paddingVerticalPx - top.toFloat())
         canvas.clipRect(
             0f,
