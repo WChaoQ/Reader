@@ -47,7 +47,7 @@ class MarkdownBookSource(
 
     companion object {
         fun open(file: File): MarkdownBookSource {
-            val text = file.readText(StandardCharsets.UTF_8)
+            val text = file.readText(StandardCharsets.UTF_8).removePrefix("\uFEFF")
             val chapters = MarkdownParser.parseDocument(text)
             return MarkdownBookSource(file, chapters)
         }
