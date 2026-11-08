@@ -6,7 +6,7 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.util.LruCache
-import com.reader.core.model.Block
+import com.reader.core.model.Chapter
 import com.reader.core.model.Locator
 import com.reader.engine.format.BookSource
 import com.reader.engine.layout.DocumentTextBuilder
@@ -60,12 +60,13 @@ class ReflowEngine(
             paginator.paginate(source, config, start).collect { event ->
                 when (event) {
                     is PaginationEvent.ChapterReady -> {
-                        val layout = buildChapterLayout(event.chapter, event.pages)
-                        layouts.put(event.chapter, layout)
-                        chapterPages[event.chapter] = event.pages
-                        chapterPageCounts[event.chapter] = event.pages.size.coerceAtLeast(1)
+                        val chapter = event.chapter
+                        val layout = buildChapterLayout(chapter, event.pages)
+                        layouts.put(chapter.index, layout)
+                        chapterPages[chapter.index] = event.pages
+                        chapterPageCounts[chapter.index] = event.pages.size.coerceAtLeast(1)
                         rebuildPageIndex()
-                        if (event.chapter == start.chapter) {
+                        if (chapter.index == start.chapter) {
                             _ready.value = true
                         }
                     }
@@ -100,10 +101,9 @@ class ReflowEngine(
 
     /** Chapter parsing and StaticLayout construction are deliberately kept off the UI thread. */
     private suspend fun buildChapterLayout(
-        chapterIndex: Int,
+        chapter: Chapter,
         pages: List<PageSlice>,
     ): ChapterLayout = withContext(Dispatchers.Default) {
-        val chapter = source.loadChapter(chapterIndex)
         val styled = DocumentTextBuilder.build(chapter.blocks)
         val plain = styled.toString()
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -117,7 +117,7 @@ class ReflowEngine(
             .setIncludePad(false)
             .build()
         ChapterLayout(
-            chapterIndex = chapterIndex,
+            chapterIndex = chapter.index,
             title = chapter.title,
             plainText = plain,
             layout = layout,
@@ -137,7 +137,8 @@ class ReflowEngine(
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val pages = chapterPages[chapter] ?: return@launch
-                val layout = buildChapterLayout(chapter, pages)
+                val document = source.loadChapter(chapter)
+                val layout = buildChapterLayout(document, pages)
                 if (!closed) {
                     layouts.put(chapter, layout)
                     onLayoutReady()
