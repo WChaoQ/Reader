@@ -81,11 +81,11 @@ Domain / UseCase 层不是强制层。只有当业务逻辑被多个 ViewModel �
 
 | 模块 | 职责 |
 |---|---|
-| :core:model | 纯 Kotlin 跨模块模型。当前可见 Book、BookFormat、Locator、BookMetadata、TocEntry、ResourceRef。 |
+| :core:model | 纯 Kotlin 跨模块模型：Book、BookFormat、Locator、BookMetadata、TocEntry、ResourceRef、Bookmark、ReaderSettings。 |
 | :core:common | 真正跨模块复用的通用基础能力；避免成为无边界杂物模块。 |
 | :core:database | Room Database、Entity、DAO、Migration 和 schema。 |
 | :core:datastore | DataStore 偏好设置读写与 Flow 暴露。 |
-| :core:storage | SAF 文档 URI、持久化 URI 授权、文件访问、输入流/描述符和必要缓存管理。 |
+| :core:storage | SAF 来源文件访问、应用私有原文件管理、输入流/描述符和必要缓存管理。当前实现不持久化源 URI。 |
 | :core:data | Repository 实现，协调数据库、设置、文件存储和格式 API。 |
 | :core:designsystem | Material 3 主题、颜色、字体、形状和设计令牌。 |
 | :core:ui | 不依赖具体 Feature 的通用 Compose UI 组件。 |
