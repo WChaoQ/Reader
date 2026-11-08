@@ -346,7 +346,15 @@ class ReaderViewModel @Inject constructor(
                     paragraphSpacingPx = settings.paragraphSpacingPx,
                     justify = settings.justify,
                 )
-                ReflowEngine(source, config, paginator, viewModelScope).also { it.start(saved) }
+                ReflowEngine(
+                    source = source,
+                    config = config,
+                    paginator = paginator,
+                    scope = viewModelScope,
+                    onLayoutReady = {
+                        _state.update { state -> state.copy(renderRevision = state.renderRevision + 1) }
+                    },
+                ).also { it.start(saved) }
             }
             engine = eng
             if (eng is ReflowEngine) eng.ready.first { it }
