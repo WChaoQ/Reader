@@ -139,7 +139,7 @@ class ReaderViewModel @Inject constructor(
         if (widthPx == pageWidth && heightPx == pageHeight) return
         pageWidth = widthPx
         pageHeight = heightPx
-        if (_state.value.format != BookFormat.PDF) {
+        if (_state.value.format != null) {
             openJob?.cancel()
             openJob = viewModelScope.launch { open(currentLocator) }
         }
