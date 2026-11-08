@@ -9,8 +9,8 @@ import androidx.lifecycle.viewModelScope
 import com.reader.core.data.BookmarkRepository
 import com.reader.core.data.BookRepository
 import com.reader.core.data.ProgressRepository
-import com.reader.core.database.BookmarkEntity
-import com.reader.core.datastore.SettingsRepository
+import com.reader.core.model.Bookmark
+import com.reader.core.data.ReaderPreferencesRepository
 import com.reader.core.model.Block
 import com.reader.core.model.BookFormat
 import com.reader.core.model.Locator
@@ -56,7 +56,7 @@ data class ReaderUiState(
     val mode: ReaderMode = ReaderMode.Reading,
     val toc: List<TocEntry> = emptyList(),
     val tocVisible: Boolean = false,
-    val bookmarks: List<BookmarkEntity> = emptyList(),
+    val bookmarks: List<Bookmark> = emptyList(),
     val bookmarksVisible: Boolean = false,
     val searchVisible: Boolean = false,
     val searchQuery: String = "",
@@ -87,7 +87,7 @@ class ReaderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val bookRepository: BookRepository,
     private val progressRepository: ProgressRepository,
-    private val settingsRepository: SettingsRepository,
+    private val settingsRepository: ReaderPreferencesRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val fileStore: BookFileStore,
     private val formatRegistry: FormatRegistry,
