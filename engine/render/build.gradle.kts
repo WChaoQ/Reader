@@ -1,6 +1,6 @@
 plugins {
     id("reader.android.library")
-    id("reader.android.compose")
+    id("reader.android.hilt")
 }
 
 android {
@@ -10,4 +10,6 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":engine:layout"))
+    implementation(project(":engine:format-api"))
+    implementation(libs.kotlinx.coroutines.android)
 }
