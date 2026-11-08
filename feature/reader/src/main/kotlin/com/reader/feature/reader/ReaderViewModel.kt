@@ -72,6 +72,7 @@ sealed interface ReaderEvent {
     data object TapLeft : ReaderEvent
     data object TapRight : ReaderEvent
     data object TapCenter : ReaderEvent
+    data object ToggleChrome : ReaderEvent
     data class JumpToPage(val page: Int) : ReaderEvent
     data class JumpToLocator(val locator: Locator) : ReaderEvent
     data class SelectPage(val page: Int) : ReaderEvent
@@ -157,6 +158,9 @@ class ReaderViewModel @Inject constructor(
                     bookmarksVisible = false,
                     searchVisible = false,
                 )
+            }
+            ReaderEvent.ToggleChrome -> _state.update {
+                it.copy(chromeVisible = !it.chromeVisible)
             }
             is ReaderEvent.JumpToPage -> jump(event.page)
             is ReaderEvent.SelectPage -> {
