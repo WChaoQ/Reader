@@ -4,11 +4,11 @@ plugins {
 
 android {
     namespace = "com.reader.benchmark"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
