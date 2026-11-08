@@ -32,13 +32,21 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Ensure Gradle Wrapper JAR
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "gradle-wrapper.jar missing; downloading for Gradle 9.6.0"
+            mkdir -p gradle/wrapper
+            curl -fsSL -o gradle/wrapper/gradle-wrapper.jar \
+              "https://github.com/gradle/gradle/raw/v9.6.0/gradle/wrapper/gradle-wrapper.jar"
+          fi
+          test -f gradle/wrapper/gradle-wrapper.jar
+          chmod +x gradlew
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
 
       - name: Assemble Debug
         if: inputs.build_type == 'debug'
