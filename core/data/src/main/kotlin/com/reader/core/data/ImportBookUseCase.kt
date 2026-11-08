@@ -45,10 +45,14 @@ class ImportBookUseCase @Inject constructor(
 
             val magic = tmp.inputStream().use { it.readNBytes(16) }
             val handler = formatRegistry.detect(name, magic)
-                ?: return@withContext Result.Error(
-                    IllegalArgumentException("Unsupported"),
-                    "不支持的文件格式",
-                )
+                ?: run {
+                    temp?.delete()
+                    temp = null
+                    return@withContext Result.Error(
+                        IllegalArgumentException("Unsupported"),
+                        "不支持的文件格式",
+                    )
+                }
 
             val ext = when (handler.format) {
                 BookFormat.TXT -> "txt"
