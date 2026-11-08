@@ -254,7 +254,7 @@ class ReaderViewModel @Inject constructor(
     private fun turn(delta: Int) {
         if (_state.value.mode == ReaderMode.Overview) return
         val eng = engine ?: return
-        val count = eng.pageCount.value.display
+        val count = eng.pageCount.value.available
         if (count <= 0) return
         val next = (_state.value.currentPage + delta).coerceIn(0, count - 1)
         if (next == _state.value.currentPage) return
@@ -264,7 +264,7 @@ class ReaderViewModel @Inject constructor(
     }
 
     private fun jump(page: Int, updateLocator: Boolean = true) {
-        val count = engine?.pageCount?.value?.display ?: return
+        val count = engine?.pageCount?.value?.available ?: return
         val next = page.coerceIn(0, (count - 1).coerceAtLeast(0))
         if (updateLocator) currentLocator = engine?.locatorOf(next) ?: currentLocator
         _state.update { it.copy(currentPage = next, mode = ReaderMode.Reading) }
