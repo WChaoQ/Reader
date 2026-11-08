@@ -64,7 +64,7 @@ class TxtBookSource(
         fun open(file: File): TxtBookSource {
             val bytes = file.readBytes()
             val charset = EncodingDetector.detect(bytes)
-            val text = bytes.toString(charset)
+            val text = bytes.toString(charset).removePrefix("\uFEFF")
             val ranges = TxtChapterSplitter.split(text).ifEmpty {
                 listOf(TxtChapterSplitter.ChapterRange("正文", 0, text.length))
             }
