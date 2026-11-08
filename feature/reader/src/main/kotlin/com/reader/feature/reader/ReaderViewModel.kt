@@ -279,6 +279,7 @@ class ReaderViewModel @Inject constructor(
 
     private suspend fun open() {
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
+        searchJob?.cancel()
         engine?.close()
         engine = null
         heldSource = null
@@ -306,7 +307,13 @@ class ReaderViewModel @Inject constructor(
             } else {
                 val source = sourceRepository.open(book)
                 heldSource = source
-                toc = runCatching { source.toc() }.getOrDefault(emptyList())
+                toc = try {
+                    source.toc()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    emptyList()
+                }
                 val config = LayoutConfig(
                     pageWidthPx = pageWidth,
                     pageHeightPx = pageHeight,
@@ -337,7 +344,7 @@ class ReaderViewModel @Inject constructor(
             }
             bookRepository.updateLastRead(bookId, System.currentTimeMillis())
         } catch (cancelled: CancellationException) {
-            engine?.close()
+            if (engine != null) engine?.close() else heldSource?.close()
             engine = null
             heldSource = null
             throw cancelled
