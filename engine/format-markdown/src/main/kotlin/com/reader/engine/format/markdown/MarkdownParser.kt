@@ -3,8 +3,13 @@ package com.reader.engine.format.markdown
 import com.reader.core.model.Block
 import com.reader.core.model.Span
 
-/** Minimal CommonMark subset (architecture §6). */
+/** Small CommonMark-oriented parser for the reader's core inline and block syntax. */
 object MarkdownParser {
+
+    private data class ParsedInline(
+        val text: String,
+        val spans: List<Span>,
+    )
 
     fun parseDocument(text: String): List<Pair<String?, List<Block>>> {
         val lines = text.replace("\r\n", "\n").split("\n")
@@ -26,13 +31,13 @@ object MarkdownParser {
             when {
                 heading != null -> {
                     val level = heading.groupValues[1].length
-                    val textH = heading.groupValues[2].trim()
+                    val parsed = parseInline(heading.groupValues[2].trim())
                     if (level <= 2) {
                         flushChapter()
-                        title = textH
-                        blocks += Block.Heading(level, textH)
+                        title = parsed.text
+                        blocks += Block.Heading(level, parsed.text, parsed.spans)
                     } else {
-                        blocks += Block.Heading(level, textH)
+                        blocks += Block.Heading(level, parsed.text, parsed.spans)
                     }
                     i++
                 }
@@ -40,10 +45,11 @@ object MarkdownParser {
                     blocks += Block.Divider
                     i++
                 }
-                line.startsWith("```") -> {
+                line.startsWith("```") || line.startsWith("~~~") -> {
+                    val fence = line.takeWhile { it == '`' || it == '~' }
                     val code = StringBuilder()
                     i++
-                    while (i < lines.size && !lines[i].startsWith("```")) {
+                    while (i < lines.size && !lines[i].trimStart().startsWith(fence)) {
                         if (code.isNotEmpty()) code.append('\n')
                         code.append(lines[i])
                         i++
@@ -57,18 +63,19 @@ object MarkdownParser {
                         quoteLines += lines[i].removePrefix(">").trimStart()
                         i++
                     }
-                    val inner = parseInlineBlocks(quoteLines.joinToString("\n"))
-                    blocks += Block.Quote(inner)
+                    blocks += Block.Quote(parseInlineBlocks(quoteLines.joinToString("\n")))
                 }
                 Regex("""^\s*([-*+]|\d+\.)\s+""").containsMatchIn(line) -> {
                     var index = 1
                     while (i < lines.size && Regex("""^\s*([-*+]|\d+\.)\s+""").containsMatchIn(lines[i])) {
                         val ordered = Regex("""^\s*\d+\.\s+""").containsMatchIn(lines[i])
                         val content = lines[i].replace(Regex("""^\s*([-*+]|\d+\.)\s+"""), "")
+                        val taskContent = content.replace(Regex("""^\[([ xX])\]\s+"""), "")
+                        val parsed = parseInline(taskContent)
                         blocks += Block.ListItem(
                             ordered = ordered,
                             index = index++,
-                            children = listOf(Block.Paragraph(content, parseSpans(content))),
+                            children = listOf(Block.Paragraph(parsed.text, parsed.spans)),
                         )
                         i++
                     }
@@ -80,43 +87,90 @@ object MarkdownParser {
                     while (i < lines.size && lines[i].isNotBlank() &&
                         !lines[i].startsWith("#") &&
                         !lines[i].startsWith("```") &&
+                        !lines[i].startsWith("~~~") &&
                         !lines[i].startsWith(">") &&
                         !Regex("""^\s*([-*+]|\d+\.)\s+""").containsMatchIn(lines[i])
                     ) {
                         para.append('\n').append(lines[i])
                         i++
                     }
-                    val textP = para.toString().trim()
-                    blocks += Block.Paragraph(textP, parseSpans(textP))
+                    val parsed = parseInline(para.toString().trim())
+                    blocks += Block.Paragraph(parsed.text, parsed.spans)
                 }
             }
         }
         flushChapter()
         if (chapters.isEmpty()) {
-            chapters += null to listOf(Block.Paragraph(text.trim()))
+            val parsed = parseInline(text.trim())
+            chapters += null to listOf(Block.Paragraph(parsed.text, parsed.spans))
         }
         return chapters
     }
 
     private fun parseInlineBlocks(text: String): List<Block> =
         text.split("\n\n").filter { it.isNotBlank() }.map {
-            Block.Paragraph(it.trim(), parseSpans(it.trim()))
+            val parsed = parseInline(it.trim())
+            Block.Paragraph(parsed.text, parsed.spans)
         }
 
-    fun parseSpans(text: String): List<Span> {
+    /** Removes inline delimiters and records spans against the resulting visible text. */
+    private fun parseInline(source: String): ParsedInline {
+        val output = StringBuilder()
         val spans = mutableListOf<Span>()
-        Regex("""\*\*(.+?)\*\*""").findAll(text).forEach {
-            spans += Span.Bold(it.range.first, it.range.last + 1)
+        var index = 0
+
+        while (index < source.length) {
+            if (source.startsWith("**", index)) {
+                val end = source.indexOf("**", index + 2)
+                if (end > index + 2) {
+                    val start = output.length
+                    output.append(source, index + 2, end)
+                    spans += Span.Bold(start, output.length)
+                    index = end + 2
+                    continue
+                }
+            }
+
+            if (source[index] == '`') {
+                val end = source.indexOf('`', index + 1)
+                if (end > index + 1) {
+                    val start = output.length
+                    output.append(source, index + 1, end)
+                    spans += Span.Code(start, output.length)
+                    index = end + 1
+                    continue
+                }
+            }
+
+            if (source[index] == '*' || source[index] == '_') {
+                val marker = source[index]
+                val end = source.indexOf(marker, index + 1)
+                if (end > index + 1) {
+                    val start = output.length
+                    output.append(source, index + 1, end)
+                    spans += Span.Italic(start, output.length)
+                    index = end + 1
+                    continue
+                }
+            }
+
+            if (source[index] == '[') {
+                val labelEnd = source.indexOf("](", index + 1)
+                val linkEnd = if (labelEnd >= 0) source.indexOf(')', labelEnd + 2) else -1
+                if (labelEnd > index + 1 && linkEnd > labelEnd + 2) {
+                    val start = output.length
+                    output.append(source, index + 1, labelEnd)
+                    val href = source.substring(labelEnd + 2, linkEnd).trim()
+                    spans += Span.Link(start, output.length, href)
+                    index = linkEnd + 1
+                    continue
+                }
+            }
+
+            output.append(source[index])
+            index++
         }
-        Regex("""(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)""").findAll(text).forEach {
-            spans += Span.Italic(it.range.first, it.range.last + 1)
-        }
-        Regex("""`([^`]+)`""").findAll(text).forEach {
-            spans += Span.Code(it.range.first, it.range.last + 1)
-        }
-        Regex("""\[([^\]]+)\]\(([^)]+)\)""").findAll(text).forEach {
-            spans += Span.Link(it.range.first, it.range.last + 1, it.groupValues[2])
-        }
-        return spans
+
+        return ParsedInline(output.toString(), spans)
     }
 }
