@@ -32,8 +32,9 @@ class FormatRegistry @Inject constructor(
         val magic = file.inputStream().use { it.readNBytes(MAGIC_BYTES) }
         val handler = detect(fileName, magic) ?: throw UnsupportedDocumentFormatException(fileName)
         val source = handler.open(file)
-        check(source.format == handler.format) {
-            "Handler for ${handler.format} returned a source for ${source.format}"
+        if (source.format != handler.format) {
+            source.close()
+            error("Handler for ${handler.format} returned a source for ${source.format}")
         }
         return source
     }
