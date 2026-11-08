@@ -131,7 +131,7 @@ fun ReaderRoute(
             }
         },
         bottomBar = {
-            if (state.chromeVisible && state.mode == ReaderMode.Reading &&
+            if (state.chromeVisible &&
                 state.pageCount.display > 0
             ) {
                 ReaderProgressBar(
@@ -200,6 +200,8 @@ fun ReaderRoute(
                                 Modifier.pointerInput(current, total) {
                                     detectTapGestures { point ->
                                         when {
+                                            point.y < size.height * 0.10f || point.y > size.height * 0.90f ->
+                                                viewModel.onEvent(ReaderEvent.ToggleChrome)
                                             point.x < size.width * 0.30f -> viewModel.onEvent(ReaderEvent.TapLeft)
                                             point.x > size.width * 0.70f -> viewModel.onEvent(ReaderEvent.TapRight)
                                             else -> viewModel.onEvent(ReaderEvent.TapCenter)
