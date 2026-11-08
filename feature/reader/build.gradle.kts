@@ -12,8 +12,6 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:common"))
     implementation(project(":core:data"))
-    implementation(project(":core:database"))
-    implementation(project(":core:datastore"))
     implementation(project(":core:storage"))
     implementation(project(":core:designsystem"))
     implementation(project(":core:ui"))
