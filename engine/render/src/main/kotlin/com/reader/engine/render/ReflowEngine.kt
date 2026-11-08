@@ -199,144 +199,105 @@ class ReflowEngine(
     }
 
     private fun blocksToStyledText(blocks: List<Block>): SpannableStringBuilder {
-        val result = SpannableStringBuilder()
-
-        fun appendSpanStyles(spans: List<Span>, start: Int, textLength: Int) {
+        fun applyInlineSpans(
+            target: SpannableStringBuilder,
+            spans: List<Span>,
+            start: Int,
+            textLength: Int,
+        ) {
             spans.forEach { span ->
                 val from = (start + span.start).coerceIn(start, start + textLength)
                 val to = (start + span.end).coerceIn(from, start + textLength)
                 if (to <= from) return@forEach
                 when (span) {
-                    is Span.Bold -> result.setSpan(StyleSpan(Typeface.BOLD), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    is Span.Italic -> result.setSpan(StyleSpan(Typeface.ITALIC), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    is Span.Bold -> target.setSpan(
+                        StyleSpan(Typeface.BOLD), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                    is Span.Italic -> target.setSpan(
+                        StyleSpan(Typeface.ITALIC), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
                     is Span.Code -> {
-                        result.setSpan(TypefaceSpan("monospace"), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        result.setSpan(BackgroundColorSpan(0x22808080), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        target.setSpan(TypefaceSpan("monospace"), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        target.setSpan(BackgroundColorSpan(0x22808080), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
                     is Span.Link -> {
-                        result.setSpan(ForegroundColorSpan(0xFF4778B8.toInt()), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        result.setSpan(UnderlineSpan(), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        target.setSpan(ForegroundColorSpan(0xFF4778B8.toInt()), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        target.setSpan(UnderlineSpan(), from, to, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
                 }
             }
         }
 
-        fun appendNested(children: List<Block>, separator: String) {
-            children.forEachIndexed { index, child ->
-                if (index > 0 && separator.isNotEmpty()) result.append(separator)
-                when (child) {
+        fun render(items: List<Block>): SpannableStringBuilder {
+            val result = SpannableStringBuilder()
+            items.forEach { block ->
+                when (block) {
                     is Block.Paragraph -> {
+                        if (result.isNotEmpty()) result.append("\\n\\n")
                         val start = result.length
-                        result.append(child.text)
-                        appendSpanStyles(child.spans, start, child.text.length)
+                        result.append(block.text)
+                        applyInlineSpans(result, block.spans, start, block.text.length)
                     }
                     is Block.Heading -> {
+                        if (result.isNotEmpty()) result.append("\\n\\n")
                         val start = result.length
-                        result.append(child.text)
-                        appendSpanStyles(child.spans, start, child.text.length)
-                        val factor = when (child.level) {
-                            1 -> 1.55f
-                            2 -> 1.38f
-                            3 -> 1.22f
-                            4 -> 1.12f
-                            else -> 1.06f
-                        }
-                        if (child.text.isNotEmpty()) {
+                        result.append(block.text)
+                        applyInlineSpans(result, block.spans, start, block.text.length)
+                        if (block.text.isNotEmpty()) {
+                            val factor = when (block.level) {
+                                1 -> 1.55f
+                                2 -> 1.38f
+                                3 -> 1.22f
+                                4 -> 1.12f
+                                else -> 1.06f
+                            }
                             result.setSpan(RelativeSizeSpan(factor), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                             result.setSpan(StyleSpan(Typeface.BOLD), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
                     }
                     is Block.Quote -> {
+                        if (result.isNotEmpty()) result.append("\\n\\n")
                         val start = result.length
-                        appendNested(child.children, "\n\n")
+                        result.append(render(block.children))
                         if (result.length > start) {
                             result.setSpan(LeadingMarginSpan.Standard(24, 24), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                             result.setSpan(StyleSpan(Typeface.ITALIC), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
                     }
                     is Block.ListItem -> {
-                        if (result.isNotEmpty()) result.append("\n")
+                        if (result.isNotEmpty()) result.append("\\n")
                         val start = result.length
-                        result.append(if (child.ordered) "${child.index}. " else "• ")
-                        appendNested(child.children, "")
+                        result.append(if (block.ordered) "${block.index}. " else "• ")
+                        result.append(render(block.children))
                         if (result.length > start) {
                             result.setSpan(LeadingMarginSpan.Standard(18, 18), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
                     }
                     is Block.CodeBlock -> {
+                        if (result.isNotEmpty()) result.append("\\n\\n")
                         val start = result.length
-                        result.append(child.text)
+                        result.append(block.text)
                         if (result.length > start) {
                             result.setSpan(TypefaceSpan("monospace"), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                             result.setSpan(BackgroundColorSpan(0x1F808080), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
                     }
                     is Block.Image -> {
+                        if (result.isNotEmpty()) result.append("\\n\\n")
+                        val alt = block.alt?.takeIf { it.isNotBlank() } ?: "image"
                         val start = result.length
-                        result.append("[${child.alt?.takeIf { it.isNotBlank() } ?: "图片"}]")
+                        result.append("[$alt]")
                         result.setSpan(StyleSpan(Typeface.ITALIC), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
-                    Block.Divider -> result.append("────────────")
+                    Block.Divider -> {
+                        if (result.isNotEmpty()) result.append("\\n\\n")
+                        result.append("———")
+                    }
                 }
             }
+            return result
         }
 
-        blocks.forEachIndexed { index, block ->
-            if (index > 0 && result.isNotEmpty()) result.append("\n\n")
-            when (block) {
-                is Block.Paragraph -> {
-                    val start = result.length
-                    result.append(block.text)
-                    appendSpanStyles(block.spans, start, block.text.length)
-                }
-                is Block.Heading -> {
-                    val start = result.length
-                    result.append(block.text)
-                    appendSpanStyles(block.spans, start, block.text.length)
-                    val factor = when (block.level) {
-                        1 -> 1.55f
-                        2 -> 1.38f
-                        3 -> 1.22f
-                        4 -> 1.12f
-                        else -> 1.06f
-                    }
-                    if (block.text.isNotEmpty()) {
-                        result.setSpan(RelativeSizeSpan(factor), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        result.setSpan(StyleSpan(Typeface.BOLD), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    }
-                }
-                is Block.Quote -> {
-                    val start = result.length
-                    appendNested(block.children, "\n\n")
-                    if (result.length > start) {
-                        result.setSpan(LeadingMarginSpan.Standard(24, 24), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        result.setSpan(StyleSpan(Typeface.ITALIC), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    }
-                }
-                is Block.ListItem -> {
-                    val start = result.length
-                    result.append(if (block.ordered) "${block.index}. " else "• ")
-                    appendNested(block.children, "")
-                    if (result.length > start) {
-                        result.setSpan(LeadingMarginSpan.Standard(18, 18), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    }
-                }
-                is Block.CodeBlock -> {
-                    val start = result.length
-                    result.append(block.text)
-                    if (result.length > start) {
-                        result.setSpan(TypefaceSpan("monospace"), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        result.setSpan(BackgroundColorSpan(0x1F808080), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    }
-                }
-                is Block.Image -> {
-                    val start = result.length
-                    result.append("[${block.alt?.takeIf { it.isNotBlank() } ?: "图片"}]")
-                    result.setSpan(StyleSpan(Typeface.ITALIC), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                }
-                Block.Divider -> result.append("────────────")
-            }
-        }
-        return result
+        return render(blocks)
     }
-}
+}\n}
