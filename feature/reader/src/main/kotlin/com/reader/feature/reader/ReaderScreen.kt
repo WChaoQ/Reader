@@ -107,14 +107,7 @@ fun ReaderRoute(
                 TopAppBar(
                     title = {
                         Text(
-                            text = buildString {
-                                append(state.title.ifBlank { "阅读" })
-                                val pc = state.pageCount
-                                if (pc.display > 0) {
-                                    append("  ${state.currentPage + 1}/${pc.display}")
-                                    if (!pc.isExact) append("~")
-                                }
-                            },
+                            text = state.title.ifBlank { "阅读" },
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
