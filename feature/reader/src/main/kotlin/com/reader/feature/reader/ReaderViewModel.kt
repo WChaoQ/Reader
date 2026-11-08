@@ -196,9 +196,6 @@ class ReaderViewModel @Inject constructor(
         engine?.drawPage(pageIndex, canvas, textColorArgb, backgroundColorArgb)
     }
 
-    fun pagePreview(pageIndex: Int): String =
-        engine?.pageText(pageIndex)?.take(120)?.replace('\n', ' ') ?: ""
-
     private fun addBookmark() {
         val eng = engine ?: return
         val locator = currentLocator
