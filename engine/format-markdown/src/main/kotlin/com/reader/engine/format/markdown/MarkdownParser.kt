@@ -154,6 +154,19 @@ object MarkdownParser {
                 }
             }
 
+            val imageStart = if (source.startsWith("![", index)) index + 1 else -1
+            if (imageStart >= 0) {
+                val labelEnd = source.indexOf("](", imageStart + 1)
+                val imageEnd = if (labelEnd >= 0) source.indexOf(')', labelEnd + 2) else -1
+                if (labelEnd > imageStart + 1 && imageEnd > labelEnd + 2) {
+                    val start = output.length
+                    output.append(source, imageStart + 1, labelEnd)
+                    spans += Span.Italic(start, output.length)
+                    index = imageEnd + 1
+                    continue
+                }
+            }
+
             if (source[index] == '[') {
                 val labelEnd = source.indexOf("](", index + 1)
                 val linkEnd = if (labelEnd >= 0) source.indexOf(')', labelEnd + 2) else -1
