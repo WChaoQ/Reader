@@ -28,12 +28,12 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
 
                 buildTypes {
                     release {
-                        isMinifyEnabled = true
-                        isShrinkResources = true
-                        proguardFiles(
-                            getDefaultProguardFile("proguard-android-optimize.txt"),
-                            "proguard-rules.pro",
-                        )
+                        // AGP 9.3+: R8 + resource shrinking + optimize defaults
+                        // (android/skills performance/r8-analyzer)
+                        optimization {
+                            enable = true
+                        }
+                        proguardFiles("proguard-rules.pro")
                     }
                     debug {
                         isMinifyEnabled = false

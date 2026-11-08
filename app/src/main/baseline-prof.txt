@@ -1,0 +1,5 @@
+HSPLcom/reader/app/MainActivity;
+HSPLcom/reader/app/ReaderApplication;
+HSPLcom/reader/app/navigation/ReaderNavHostKt;
+HSPLcom/reader/feature/library/LibraryScreenKt;
+HSPLcom/reader/core/designsystem/theme/ThemeKt;
