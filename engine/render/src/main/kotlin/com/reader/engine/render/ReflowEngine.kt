@@ -219,18 +219,20 @@ class ReflowEngine(
     override fun close() {
         if (closed) return
         closed = true
-        val activeJobs = buildList {
-            paginateJob?.let(::add)
-            addAll(layoutJobs.values)
-        }
+        val activeJobs = mutableListOf<Job>()
+        paginateJob?.let { activeJobs.add(it) }
+        activeJobs.addAll(layoutJobs.values)
         activeJobs.forEach { it.cancel() }
         layoutJobs.clear()
         layouts.evictAll()
         chapterPages.clear()
         cleanupScope.launch {
             activeJobs.joinAll()
-            source.close()
-            cleanupScope.cancel()
+            try {
+                source.close()
+            } finally {
+                cleanupScope.cancel()
+            }
         }
     }
 
