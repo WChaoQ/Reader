@@ -7,10 +7,8 @@ import org.gradle.kotlin.dsl.configure
 class AndroidApplicationConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
-            with(pluginManager) {
-                apply("com.android.application")
-                apply("org.jetbrains.kotlin.android")
-            }
+            // AGP 9+ embeds Kotlin Android support; do not apply org.jetbrains.kotlin.android
+            pluginManager.apply("com.android.application")
 
             extensions.configure<ApplicationExtension> {
                 compileSdk = 36
@@ -29,7 +27,6 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                 buildTypes {
                     release {
                         // AGP 9.3+: R8 + resource shrinking + optimize defaults
-                        // (android/skills performance/r8-analyzer)
                         optimization {
                             enable = true
                         }
