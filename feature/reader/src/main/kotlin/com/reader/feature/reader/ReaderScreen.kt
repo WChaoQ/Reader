@@ -212,7 +212,7 @@ fun ReaderRoute(
                                             }
                                             val target = (current + delta).coerceIn(0, (total - 1).coerceAtLeast(0))
                                             val appliedDelta = target - current
-                                            val releaseOffset = dragOffset.floatValue - appliedDelta * stepPx
+                                            val releaseOffset = dragOffset.floatValue + appliedDelta * stepPx
                                             if (target != current) {
                                                 viewModel.onEvent(ReaderEvent.JumpToPage(target))
                                             }
