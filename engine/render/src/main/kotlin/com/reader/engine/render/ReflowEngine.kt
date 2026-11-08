@@ -54,7 +54,7 @@ class ReflowEngine(
         chapterPageCounts.clear()
         layouts.evictAll()
         _ready.value = false
-        _pageCount.value = PageCountInfo(estimated = source.chapterCount.coerceAtLeast(1))
+        _pageCount.value = PageCountInfo(estimated = source.chapterCount.coerceAtLeast(1), available = 0)
 
         paginateJob = scope.launch {
             paginator.paginate(source, config, start).collect { event ->
@@ -75,11 +75,11 @@ class ReflowEngine(
                             if (it.isNaN()) 1.0 else it
                         }
                         val estimated = (avg * source.chapterCount).toInt().coerceAtLeast(1)
-                        _pageCount.value = PageCountInfo(exact = null, estimated = estimated)
+                        _pageCount.value = PageCountInfo(exact = null, estimated = maxOf(estimated, pageIndexMap.size), available = pageIndexMap.size)
                     }
                     PaginationEvent.Completed -> {
                         rebuildPageIndex()
-                        _pageCount.value = PageCountInfo(exact = pageIndexMap.size)
+                        _pageCount.value = PageCountInfo(exact = pageIndexMap.size, available = pageIndexMap.size)
                         _ready.value = true
                     }
                 }
@@ -95,7 +95,7 @@ class ReflowEngine(
         }
         if (pageIndexMap.isNotEmpty()) {
             val exact = if (chapterPageCounts.size == source.chapterCount) pageIndexMap.size else null
-            _pageCount.value = PageCountInfo(exact = exact, estimated = pageIndexMap.size)
+            _pageCount.value = PageCountInfo(exact = exact, estimated = pageIndexMap.size, available = pageIndexMap.size)
         }
     }
 
