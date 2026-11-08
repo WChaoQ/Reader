@@ -34,7 +34,7 @@ class SimplePaginator @Inject constructor() : Paginator {
             coroutineContext.ensureActive()
             val chapter = book.loadChapter(chapterIndex)
             val pages = paginateChapter(chapter.blocks, config)
-            emit(PaginationEvent.ChapterReady(chapterIndex, pages))
+            emit(PaginationEvent.ChapterReady(chapter, pages))
             done++
             emit(PaginationEvent.Progress(done, total))
         }
