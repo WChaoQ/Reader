@@ -1,0 +1,170 @@
+package com.reader.feature.library
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.reader.core.model.Book
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LibraryRoute(
+    onOpenBook: (String) -> Unit,
+    viewModel: LibraryViewModel = hiltViewModel(),
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(viewModel) {
+        viewModel.navigateToReader.collect { onOpenBook(it) }
+    }
+    LaunchedEffect(state.errorMessage, state.infoMessage) {
+        state.errorMessage?.let {
+            snackbar.showSnackbar(it)
+            viewModel.onEvent(LibraryEvent.ClearMessage)
+        }
+        state.infoMessage?.let {
+            snackbar.showSnackbar(it)
+            viewModel.onEvent(LibraryEvent.ClearMessage)
+        }
+    }
+
+    val picker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris: List<Uri> ->
+        viewModel.onEvent(LibraryEvent.ImportUris(uris))
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("书架") })
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    picker.launch(
+                        arrayOf(
+                            "text/plain",
+                            "text/markdown",
+                            "application/epub+zip",
+                            "application/pdf",
+                            "*/*",
+                        ),
+                    )
+                },
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "导入")
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            when {
+                state.isLoading -> {
+                    CircularProgressIndicator(Modifier = Modifier.align(Alignment.Center))
+                }
+                state.books.isEmpty() -> {
+                    Text(
+                        text = "点击右下角导入 TXT / Markdown / EPUB / PDF",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(32.dp),
+                    )
+                }
+                else -> {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(140.dp),
+                        contentPadding = PaddingValues(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(state.books, key = { it.id }) { book ->
+                            BookCard(
+                                book = book,
+                                onClick = { viewModel.onEvent(LibraryEvent.OpenBook(book.id)) },
+                            )
+                        }
+                    }
+                }
+            }
+            if (state.isImporting) {
+                CircularProgressIndicator(Modifier = Modifier.align(Alignment.Center))
+            }
+        }
+    }
+}
+
+@Composable
+private fun BookCard(
+    book: Book,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = book.title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = book.format.name,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            book.author?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
