@@ -1,5 +1,6 @@
 plugins {
     id("reader.android.library")
+    id("reader.android.hilt")
 }
 
 android {
