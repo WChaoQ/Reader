@@ -35,6 +35,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 enum class ReaderMode { Reading, Overview }
@@ -109,6 +111,7 @@ class ReaderViewModel @Inject constructor(
     private var openJob: Job? = null
     private var engineObserveJob: Job? = null
     private var currentLocator: Locator = Locator(0, 0)
+    private val openMutex = Mutex()
     private var pageWidth = 1080
     private var pageHeight = 1920
 
@@ -289,6 +292,10 @@ class ReaderViewModel @Inject constructor(
     }
 
     private suspend fun open(startLocator: Locator? = null) {
+        openMutex.withLock { openInternal(startLocator) }
+    }
+
+    private suspend fun openInternal(startLocator: Locator?) {
         engineObserveJob?.cancel()
         engineObserveJob = null
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
