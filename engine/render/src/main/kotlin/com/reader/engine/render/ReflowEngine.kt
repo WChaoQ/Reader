@@ -16,6 +16,9 @@ import com.reader.engine.layout.PaginationEvent
 import com.reader.engine.layout.Paginator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +47,7 @@ class ReflowEngine(
     private val chapterPages = ConcurrentHashMap<Int, List<PageSlice>>()
     private val layouts = LruCache<Int, ChapterLayout>(3)
     private val layoutJobs = ConcurrentHashMap<Int, Job>()
+    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var paginateJob: Job? = null
     @Volatile private var closed = false
@@ -213,13 +217,21 @@ class ReflowEngine(
     }
 
     override fun close() {
+        if (closed) return
         closed = true
-        paginateJob?.cancel()
-        layoutJobs.values.forEach { it.cancel() }
+        val activeJobs = buildList {
+            paginateJob?.let(::add)
+            addAll(layoutJobs.values)
+        }
+        activeJobs.forEach { it.cancel() }
         layoutJobs.clear()
         layouts.evictAll()
         chapterPages.clear()
-        source.close()
+        cleanupScope.launch {
+            activeJobs.joinAll()
+            source.close()
+            cleanupScope.cancel()
+        }
     }
 
 }
