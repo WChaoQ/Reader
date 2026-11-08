@@ -89,6 +89,9 @@ object MarkdownParser {
                         !lines[i].startsWith("```") &&
                         !lines[i].startsWith("~~~") &&
                         !lines[i].startsWith(">") &&
+                        lines[i].trim() != "---" &&
+                        lines[i].trim() != "***" &&
+                        lines[i].trim() != "___" &&
                         !Regex("""^\s*([-*+]|\d+\.)\s+""").containsMatchIn(lines[i])
                     ) {
                         para.append('\n').append(lines[i])
