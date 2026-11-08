@@ -214,7 +214,7 @@ class ReaderViewModel @Inject constructor(
             _state.update { it.copy(searching = false, snackbar = "当前格式暂不支持全文搜索") }
             return
         }
-        searchJob = viewModelScope.launch {
+        searchJob = viewModelScope.launch(dispatchers.io) {
             val hits = mutableListOf<SearchHit>()
             val q = query.trim()
             for (ch in 0 until source.chapterCount) {
@@ -300,6 +300,7 @@ class ReaderViewModel @Inject constructor(
         engineObserveJob = null
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
         searchJob?.cancel()
+        searchJob?.join()
         engine?.close()
         engine = null
         heldSource = null
