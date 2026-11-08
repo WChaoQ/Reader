@@ -33,7 +33,7 @@ interface ProgressDao {
 @Dao
 interface BookmarkDao {
     @Query("SELECT * FROM bookmark WHERE bookId = :bookId ORDER BY createdAt DESC")
-    fun observeByBook(bookId: String): Flow<List coBookmarkEntity>>
+    fun observeByBook(bookId: String): Flow<List<BookmarkEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(bookmark: BookmarkEntity)
