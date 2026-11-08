@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import android.util.LruCache
 import com.reader.core.model.Locator
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -108,7 +109,7 @@ class FixedEngine(
 
     private fun requestPage(pageIndex: Int) {
         if (closed || renderJobs.containsKey(pageIndex)) return
-        val job = renderScope.launch {
+        val job = renderScope.launch(start = CoroutineStart.LAZY) {
             try {
                 val bitmap = renderBitmap(pageIndex, pageWidthPx)
                 if (bitmap != null && !closed) {
@@ -124,6 +125,7 @@ class FixedEngine(
             }
         }
         renderJobs[pageIndex] = job
+        job.start()
     }
 
     private suspend fun renderBitmap(pageIndex: Int, targetWidth: Int): Bitmap? = mutex.withLock {
