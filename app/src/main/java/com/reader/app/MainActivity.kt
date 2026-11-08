@@ -5,12 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.Modifier
+import com.reader.app.navigation.ReaderNavHost
 import com.reader.core.designsystem.theme.ReaderTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -21,31 +18,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ReaderTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    // Scaffold navigation will be wired in feature modules
-                    Greeting("Reader")
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    ReaderNavHost()
                 }
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier,
-        style = MaterialTheme.typography.headlineMedium,
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    ReaderTheme {
-        Greeting("Reader")
     }
 }
