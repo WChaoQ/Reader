@@ -203,8 +203,16 @@ fun ReaderRoute(
                         current.toFloat()
                     }
 
+                    // In fullscreen mode, clip to the page width so adjacent pages
+                    // cannot peek out on wide screens. Expand the stage while previewing.
+                    val stageWidth = pageWidth + (maxWidth - pageWidth) * previewProgress
+
                     Box(
-                        modifier = Modifier.fillMaxSize().then(
+                        modifier = Modifier.width(stageWidth)
+                            .fillMaxHeight()
+                            .align(Alignment.Center)
+                            .graphicsLayer { clip = true }
+                            .then(
                             if (state.adjacentPagesVisible) {
                                 Modifier.pointerInput(current, total, pageStepPx) {
                                     val velocityTracker = VelocityTracker()
