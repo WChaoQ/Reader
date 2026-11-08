@@ -9,9 +9,11 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.reader.feature.library.LibraryRoute
 import com.reader.feature.reader.ReaderRoute
+import com.reader.feature.settings.SettingsRoute
 
 object Routes {
     const val Library = "library"
+    const val Settings = "settings"
     const val Reader = "reader/{bookId}"
     fun reader(bookId: String) = "reader/$bookId"
 }
@@ -27,7 +29,11 @@ fun ReaderNavHost(
         composable(Routes.Library) {
             LibraryRoute(
                 onOpenBook = { id -> navController.navigate(Routes.reader(id)) },
+                onOpenSettings = { navController.navigate(Routes.Settings) },
             )
+        }
+        composable(Routes.Settings) {
+            SettingsRoute(onBack = { navController.popBackStack() })
         }
         composable(
             route = Routes.Reader,
