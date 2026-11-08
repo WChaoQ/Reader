@@ -137,7 +137,7 @@ class ReflowEngine(
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val pages = chapterPages[chapter] ?: return@launch
-                val document = source.loadChapter(chapter)
+                val document = withContext(Dispatchers.IO) { source.loadChapter(chapter) }
                 val layout = buildChapterLayout(document, pages)
                 if (!closed) {
                     layouts.put(chapter, layout)
