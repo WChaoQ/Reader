@@ -188,13 +188,16 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 
 ### 统一契约
 
-format-api 的具体接口名称以代码实际定义为准。契约应覆盖：
+当前 format-api 通过 `FormatHandler`、`BookSource` 和 `FormatRegistry` 提供统一契约，并明确以下规则：
 
-- 判断格式是否支持输入文档。
+- `FormatHandler.canHandle` 只根据文件名和有限 magic bytes 判断格式，不执行 I/O。
+- 每种 `BookFormat` 只能注册一个 handler；一个文件最多匹配一个 handler，避免依赖 Hilt Set 的遍历顺序。
 - 打开文档并读取元数据。
 - 获取目录或章节结构（格式支持时）。
 - 按需读取章节内容或 PDF 页面。
 - 将格式内部位置转换为 Locator，并支持从 Locator 恢复。
+- `BookSource` 章节/页面索引统一从 0 开始；`chapterCount` 在当前文档会话内保持稳定。
+- `BookSource.close()` 由打开会话的调用方负责；`openResource()` 返回的 InputStream 由调用方关闭。
 - 关闭文档并释放底层资源。
 - 将解析失败转换为可处理错误，不让异常直接穿透到 Compose。
 
@@ -348,7 +351,7 @@ format-api 的具体接口名称以代码实际定义为准。契约应覆盖：
 - Hilt 应用入口和 Activity 注入集成。
 - Core、Engine、Feature、Benchmark 模块均已在 settings 中声明。
 - Room、DataStore、Storage、Format API 和各格式实现已有独立 Gradle 模块。
-- :core:model 当前可见 Book、BookFormat、Locator、BookMetadata、TocEntry、ResourceRef。
+- :core:model 包含 Book、BookFormat、Locator、BookMetadata、TocEntry、ResourceRef，以及数据库无关的 Bookmark、ReaderSettings。
 - Manifest 未声明 INTERNET 权限。
 - Benchmark 已配置 Macrobenchmark 目标工程。
 
