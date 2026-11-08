@@ -174,7 +174,7 @@ fun ReaderRoute(
                     )
                     val current = state.currentPage
                     val total = state.pageCount.available
-                    val neighbourOffset = with(density) { animatedWidth.toPx() * 0.82f + 12.dp.toPx() }
+                    val neighbourOffset = with(density) { animatedWidth.toPx() * 0.68f + 12.dp.toPx() }
                     Box(
                         modifier = Modifier.fillMaxSize().then(
                             if (state.adjacentPagesVisible) {
