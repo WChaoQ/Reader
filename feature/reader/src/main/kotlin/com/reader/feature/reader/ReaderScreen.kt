@@ -162,7 +162,7 @@ fun ReaderRoute(
                         viewModel.onViewportSized(w, h)
                     }
                     val previewWidth = maxWidth * 0.72f
-                    val previewHeight = maxHeight * 0.90f
+                    val previewHeight = maxHeight * 0.72f
                     val animatedWidth by animateDpAsState(
                         targetValue = if (state.adjacentPagesVisible) previewWidth else maxWidth,
                         label = "reader-page-width",
