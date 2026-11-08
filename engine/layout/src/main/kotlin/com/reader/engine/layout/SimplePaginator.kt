@@ -3,6 +3,7 @@ package com.reader.engine.layout
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import com.reader.core.model.Block
 import com.reader.core.model.Locator
 import com.reader.engine.format.BookSource
 import kotlinx.coroutines.Dispatchers
