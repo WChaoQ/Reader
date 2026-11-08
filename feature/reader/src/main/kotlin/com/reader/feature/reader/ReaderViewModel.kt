@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.reader.core.common.ReaderDispatchers
 import com.reader.core.data.BookmarkRepository
 import com.reader.core.data.BookRepository
 import com.reader.core.data.BookSourceRepository
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 enum class ReaderMode { Reading, Overview }
@@ -91,6 +93,7 @@ class ReaderViewModel @Inject constructor(
     private val bookmarkRepository: BookmarkRepository,
     private val sourceRepository: BookSourceRepository,
     private val paginator: SimplePaginator,
+    private val dispatchers: ReaderDispatchers,
 ) : ViewModel() {
 
     private val bookId: String = checkNotNull(savedStateHandle["bookId"])
@@ -102,6 +105,7 @@ class ReaderViewModel @Inject constructor(
     private var heldSource: BookSource? = null
     private var saveJob: Job? = null
     private var searchJob: Job? = null
+    private var openJob: Job? = null
     private var pageWidth = 1080
     private var pageHeight = 1920
 
@@ -119,7 +123,7 @@ class ReaderViewModel @Inject constructor(
         }
 
     init {
-        viewModelScope.launch { open() }
+        openJob = viewModelScope.launch { open() }
         viewModelScope.launch {
             bookmarkRepository.observe(bookId).collect { list ->
                 _state.update { it.copy(bookmarks = list) }
@@ -132,8 +136,9 @@ class ReaderViewModel @Inject constructor(
         if (widthPx == pageWidth && heightPx == pageHeight) return
         pageWidth = widthPx
         pageHeight = heightPx
-        if (engine != null && _state.value.format != BookFormat.PDF) {
-            viewModelScope.launch { open() }
+        if (_state.value.format != BookFormat.PDF) {
+            openJob?.cancel()
+            openJob = viewModelScope.launch { open() }
         }
     }
 
@@ -299,7 +304,9 @@ class ReaderViewModel @Inject constructor(
             val saved = progressRepository.get(bookId) ?: Locator(0, 0)
             var toc: List<TocEntry> = emptyList()
             val eng: ReaderEngine = if (book.format == BookFormat.PDF) {
-                FixedEngine(file = file, pageWidthPx = pageWidth, nightMode = settings.theme == "night").also {
+                withContext(dispatchers.io) {
+                    FixedEngine(file = file, pageWidthPx = pageWidth, nightMode = settings.theme == "night")
+                }.also {
                     toc = (0 until it.pageCount.value.display).map { page ->
                         TocEntry("第 ${page + 1} 页", Locator(page, 0))
                     }
