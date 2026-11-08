@@ -25,6 +25,7 @@ import com.reader.engine.layout.PageSlice
 import com.reader.engine.layout.PaginationEvent
 import com.reader.engine.layout.Paginator
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +40,7 @@ class ReflowEngine(
     private val config: LayoutConfig,
     private val paginator: Paginator,
     private val scope: CoroutineScope,
+    private val onLayoutReady: () -> Unit = {},
 ) : ReaderEngine {
 
     private val _pageCount = MutableStateFlow(PageCountInfo(estimated = 0))
@@ -49,9 +51,12 @@ class ReflowEngine(
 
     private val pageIndexMap = mutableListOf<Pair<Int, Int>>()
     private val chapterPageCounts = ConcurrentHashMap<Int, Int>()
+    private val chapterPages = ConcurrentHashMap<Int, List<PageSlice>>()
     private val layouts = LruCache<Int, ChapterLayout>(3)
+    private val layoutJobs = ConcurrentHashMap<Int, Job>()
 
     private var paginateJob: Job? = null
+    @Volatile private var closed = false
 
     fun start(start: Locator = Locator(0, 0)) {
         paginateJob?.cancel()
@@ -67,6 +72,7 @@ class ReflowEngine(
                     is PaginationEvent.ChapterReady -> {
                         val layout = buildChapterLayout(event.chapter, event.pages)
                         layouts.put(event.chapter, layout)
+                        chapterPages[event.chapter] = event.pages
                         chapterPageCounts[event.chapter] = event.pages.size.coerceAtLeast(1)
                         rebuildPageIndex()
                         if (event.chapter == start.chapter) {
@@ -129,12 +135,35 @@ class ReflowEngine(
         )
     }
 
-    private fun ensureLayout(chapter: Int): ChapterLayout? = layouts.get(chapter)
+    private fun ensureLayout(chapter: Int): ChapterLayout? {
+        val cached = layouts.get(chapter)
+        if (cached == null) requestLayout(chapter)
+        return cached
+    }
+
+    /** Rebuilds an evicted chapter layout lazily instead of leaving older pages permanently blank. */
+    private fun requestLayout(chapter: Int) {
+        if (closed || layoutJobs.containsKey(chapter)) return
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val pages = chapterPages[chapter] ?: return@launch
+                val layout = buildChapterLayout(chapter, pages)
+                if (!closed) {
+                    layouts.put(chapter, layout)
+                    onLayoutReady()
+                }
+            } finally {
+                layoutJobs.remove(chapter)
+            }
+        }
+        val existing = layoutJobs.putIfAbsent(chapter, job)
+        if (existing == null) job.start() else job.cancel()
+    }
 
     override fun locatorOf(pageIndex: Int): Locator {
         if (pageIndexMap.isEmpty() || pageIndex !in pageIndexMap.indices) return Locator(0, 0)
         val (chapter, pageInChapter) = pageIndexMap[pageIndex]
-        val slice = ensureLayout(chapter)?.pages?.getOrNull(pageInChapter)
+        val slice = chapterPages[chapter]?.getOrNull(pageInChapter)
         val totalPages = pageIndexMap.size.coerceAtLeast(1)
         return Locator(
             chapter = chapter,
@@ -145,9 +174,9 @@ class ReflowEngine(
 
     override fun pageIndexOf(locator: Locator): Int {
         if (pageIndexMap.isEmpty()) return 0
-        val layout = ensureLayout(locator.chapter)
-        if (layout != null) {
-            val index = layout.pages.indexOfFirst {
+        val pages = chapterPages[locator.chapter]
+        if (pages != null) {
+            val index = pages.indexOfFirst {
                 locator.offset >= it.startOffset && locator.offset < it.endOffset
             }
             if (index >= 0) {
@@ -193,8 +222,12 @@ class ReflowEngine(
     }
 
     override fun close() {
+        closed = true
         paginateJob?.cancel()
+        layoutJobs.values.forEach { it.cancel() }
+        layoutJobs.clear()
         layouts.evictAll()
+        chapterPages.clear()
         source.close()
     }
 
