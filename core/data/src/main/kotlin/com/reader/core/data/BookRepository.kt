@@ -3,6 +3,8 @@ package com.reader.core.data
 import com.reader.core.common.ReaderDispatchers
 import com.reader.core.database.BookDao
 import com.reader.core.model.Book
+import com.reader.core.model.BookFormat
+import java.io.File
 import com.reader.core.storage.BookFileStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -30,6 +32,16 @@ class BookRepository @Inject constructor(
     suspend fun updateLastRead(bookId: String, at: Long) = withContext(dispatchers.io) {
         val existing = bookDao.getById(bookId) ?: return@withContext
         bookDao.upsert(existing.copy(lastReadAt = at))
+    }
+
+    fun originalFile(bookId: String, format: BookFormat): File? {
+        val extension = when (format) {
+            BookFormat.TXT -> "txt"
+            BookFormat.MD -> "md"
+            BookFormat.EPUB -> "epub"
+            BookFormat.PDF -> "pdf"
+        }
+        return fileStore.originalFile(bookId, extension).takeIf { it.exists() }
     }
 
     suspend fun delete(bookId: String) = withContext(dispatchers.io) {

@@ -11,7 +11,7 @@
 ### 产品边界
 
 - 仅处理用户主动选择或授权访问的本地文档。
-- 通过 Android Storage Access Framework（SAF）访问文档。
+- 通过 Android Storage Access Framework（SAF）让用户选择文档；当前导入流程将文件复制到应用私有目录并以内容哈希建立书籍 ID。
 - 支持 EPUB、PDF、Markdown、TXT。
 - 书籍索引、阅读进度和偏好保存在本地。
 - 不包含账号、云同步、在线书城或远程内容抓取。
@@ -81,11 +81,11 @@ Domain / UseCase 层不是强制层。只有当业务逻辑被多个 ViewModel �
 
 | 模块 | 职责 |
 |---|---|
-| :core:model | 纯 Kotlin 跨模块模型。当前可见 Book、BookFormat、Locator、BookMetadata、TocEntry、ResourceRef。 |
+| :core:model | 纯 Kotlin 跨模块模型：Book、BookFormat、Locator、BookMetadata、TocEntry、ResourceRef、Bookmark、ReaderSettings。 |
 | :core:common | 真正跨模块复用的通用基础能力；避免成为无边界杂物模块。 |
 | :core:database | Room Database、Entity、DAO、Migration 和 schema。 |
 | :core:datastore | DataStore 偏好设置读写与 Flow 暴露。 |
-| :core:storage | SAF 文档 URI、持久化 URI 授权、文件访问、输入流/描述符和必要缓存管理。 |
+| :core:storage | SAF 来源文件访问、应用私有原文件管理、输入流/描述符和必要缓存管理。当前实现不持久化源 URI。 |
 | :core:data | Repository 实现，协调数据库、设置、文件存储和格式 API。 |
 | :core:designsystem | Material 3 主题、颜色、字体、形状和设计令牌。 |
 | :core:ui | 不依赖具体 Feature 的通用 Compose UI 组件。 |
@@ -126,20 +126,21 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 
 ### 4.1 导入
 
-用户点击导入 → SAF 返回 content URI → Storage 获取并持有系统授权 → 格式能力读取元数据 → Data Repository 保存书籍索引 → Room Flow 更新书库 UI。
+用户点击导入 → SAF 返回 content URI → ImportBookUseCase 通过 ContentResolver 读取输入流 → BookFileStore 复制文件并计算 SHA-256 → FormatRegistry 选择格式实现并读取元数据 → Room 保存书籍索引 → Flow 更新书库 UI。
 
 约束：
 
-- SAF 返回的 content:// URI 不是普通文件路径。
-- 长期访问文档时，在系统允许的情况下持久化 URI 读权限。
-- 导入时不默认复制整本书到应用私有目录。
-- 封面、解析索引和临时缓存属于可重建数据，应与原始文档引用分开管理。
+- SAF 返回的 content:// URI 不是普通文件路径，必须通过 ContentResolver 打开。
+- **当前实现会复制完整原文件**到应用私有目录 `filesDir/books/<bookId>/original.<ext>`，并以 SHA-256 内容摘要（截取前 32 位十六进制字符）作为书籍 ID。
+- 当前实现不持久化源 URI，也不依赖长期 URI 授权；原始文件随应用数据存储，删除书籍时由 BookFileStore 删除。
+- 该方案便于离线读取和稳定随机访问，但应用私有数据会随导入文件大小增长。若未来改为 URI 引用模式，必须单独设计持久化授权、源文件失效恢复和 PDF 随机访问，不能只删除复制步骤。
+- 封面、章节索引和渲染缓存应与原始文件分开管理，并允许重建。
 - 元数据提取失败不应导致崩溃；应保留可识别的文件名和格式信息。
 - 导入应具备幂等性，避免重复记录。
 
 ### 4.2 打开和阅读
 
-用户选择书籍 → Reader ViewModel → Repository 获取书籍记录和 URI → Format API 分发至 TXT / Markdown / EPUB / PDF 实现 → 统一内容或 PDF 页面数据 → Layout → Render → Compose 阅读界面。
+用户选择书籍 → Reader ViewModel → BookRepository 获取书籍记录和应用私有原文件 → PDF 使用 FixedEngine，重排文本通过 BookSourceRepository / FormatRegistry 分发至 TXT / Markdown / EPUB → Layout → Render → Compose 阅读界面。
 
 格式差异应尽量在 Engine 内部消化。Feature 不应散落大量按格式分支的解析代码。
 
@@ -165,8 +166,8 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 
 ### 当前配置中值得治理的依赖
 
-1. :feature:reader 当前直接依赖 database、datastore、storage，同时也依赖 data。目标上应优先经由 Repository / Settings API 访问这些能力；确认不再需要后移除 Feature 对具体数据源模块的直接依赖。
-2. :feature:reader 直接依赖 format-api、layout、render，是阅读功能的合理引擎接入点；但不应依赖具体格式解析器的内部实现。
+1. `:feature:reader` 和 `:feature:settings` 已不再直接依赖 database、datastore 或 storage；书籍/进度/书签/设置/文档打开分别通过 `:core:data` 的 Repository API 访问。Reader 仍保留 `:core:model`、`format-api`、`layout`、`render` 等直接依赖。
+2. `:feature:reader` 保留 format-api、layout、render 依赖：它需要统一 BookSource 类型并直接驱动布局与渲染，但不依赖具体格式实现。
 3. :app 当前显式依赖多个格式实现和 Engine 模块，作为应用组合/装配层可以接受；若采用 Hilt multibinding 或 Engine Registry，应集中维护格式注册。
 4. :core:data 当前依赖 format-api，应明确它只协调元数据/文档访问，不承担排版和渲染。
 5. :core:common 只放真正跨模块通用能力。
@@ -187,13 +188,16 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 
 ### 统一契约
 
-format-api 的具体接口名称以代码实际定义为准。契约应覆盖：
+当前 format-api 通过 `FormatHandler`、`BookSource` 和 `FormatRegistry` 提供统一契约，并明确以下规则：
 
-- 判断格式是否支持输入文档。
+- `FormatHandler.canHandle` 只根据文件名和有限 magic bytes 判断格式，不执行 I/O。
+- 每种 `BookFormat` 只能注册一个 handler；一个文件最多匹配一个 handler，避免依赖 Hilt Set 的遍历顺序。
 - 打开文档并读取元数据。
 - 获取目录或章节结构（格式支持时）。
 - 按需读取章节内容或 PDF 页面。
 - 将格式内部位置转换为 Locator，并支持从 Locator 恢复。
+- `BookSource` 章节/页面索引统一从 0 开始；`chapterCount` 在当前文档会话内保持稳定。
+- `BookSource.close()` 由打开会话的调用方负责；`openResource()` 返回的 InputStream 由调用方关闭。
 - 关闭文档并释放底层资源。
 - 将解析失败转换为可处理错误，不让异常直接穿透到 Compose。
 
@@ -257,17 +261,16 @@ format-api 的具体接口名称以代码实际定义为准。契约应覆盖：
 | 书籍元数据和导入记录 | Room | 不以内存列表作为持久来源 |
 | 阅读进度 | Room | 使用统一 Locator |
 | 阅读偏好 | DataStore | 主题、字号、行距等 |
-| 原始文档 | 用户提供的 SAF URI | 不默认复制原文件 |
+| 原始文档 | 应用私有目录 `filesDir/books/<bookId>/original.<ext>` | 当前导入流程复制完整原文件；删除书籍时一并删除 |
 | 临时解析/渲染缓存 | 缓存目录或内存 | 可清理、可重建 |
 | 页面临时交互状态 | ViewModel / SavedState | 不替代持久进度 |
 
 文件生命周期约束：
 
-- 使用 SAF 授权访问，不绕过 Android 存储权限模型。
-- URI 持久化授权失效时提供重新授权流程。
-- 文件暂时不可读不意味着必须删除书籍元数据。
-- 删除书籍记录、删除缓存、撤销 URI 权限是不同操作。
-- 备份策略必须考虑 URI 在其他设备上可能失效。
+- 仅通过 SAF 选择来源文件，并通过 ContentResolver 读取；不申请宽泛存储权限。
+- 当前原文件保存在应用私有目录，启动阅读不再依赖源 URI 是否仍有效。
+- 文件缺失时保留书籍元数据并展示可恢复错误；删除书籍时分别处理数据库记录和原文件/缓存。
+- 应用私有文件可能参与系统备份；备份策略必须明确是否备份原始书籍，避免意外产生大体积备份。
 
 ## 9. 依赖注入与构建
 
@@ -348,28 +351,28 @@ format-api 的具体接口名称以代码实际定义为准。契约应覆盖：
 - Hilt 应用入口和 Activity 注入集成。
 - Core、Engine、Feature、Benchmark 模块均已在 settings 中声明。
 - Room、DataStore、Storage、Format API 和各格式实现已有独立 Gradle 模块。
-- :core:model 当前可见 Book、BookFormat、Locator、BookMetadata、TocEntry、ResourceRef。
+- :core:model 包含 Book、BookFormat、Locator、BookMetadata、TocEntry、ResourceRef，以及数据库无关的 Bookmark、ReaderSettings。
 - Manifest 未声明 INTERNET 权限。
 - Benchmark 已配置 Macrobenchmark 目标工程。
 
 ### 需要结合完整实现持续核验
 
-- Format API 的完整接口、解析器能力和错误模型。
+- 四种格式解析器的边界行为、异常模型和大文件性能。
 - Room Entity/DAO/Repository 的数据关系与 Migration。
-- SAF URI 持久化授权和缓存清理是否完整。
-- EPUB 是否按需解析且没有整本解压副本。
+- 当前整文件复制策略的存储占用，以及未来是否需要可选 URI 引用模式。
+- EPUB 是否按需读取章节且没有额外整本解压副本。
 - PDF 页面缓存是否有上限、资源是否及时释放。
 - ViewModel 是否统一使用 StateFlow/UDF 和生命周期感知收集。
 - Hilt 格式注册是否集中且无重复绑定。
-- 备份规则是否符合原始文件由用户持有的模型。
+- 备份规则是否明确处理应用私有原文件，避免不必要的大体积备份。
 
 ### 优先治理顺序
 
-1. 明确 format-api 稳定契约。
-2. 收敛 :feature:reader 对 database/datastore/storage 的直接依赖，统一经由 Repository / Settings API。
-3. 明确 SAF URI、缓存和书籍索引的生命周期及失效恢复。
-4. 为四种格式建立一致的打开、读取、关闭和定位测试契约。
-5. 建立大文档内存与性能基线，再按测量结果优化。
+1. 已为 format-api 明确零基索引、资源所有权、关闭责任和 handler 唯一性，并为 FormatRegistry 增加单元测试。
+2. 已将书签和阅读设置模型移入纯 Kotlin core:model；Reader 和 Settings Feature 不再接触 Room Entity 或 DataStore 实现。
+3. 已通过 BookSourceRepository 和 BookRepository 隐藏格式注册与文件存储细节。
+4. 继续为四种格式建立真实文件样本、异常输入、取消和资源释放测试。
+5. 评估整文件复制的存储成本，并建立大文档内存与性能基线。
 
 ## 14. 官方规范与参考资料
 

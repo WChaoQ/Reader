@@ -8,16 +8,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.reader.core.data.BookmarkRepository
 import com.reader.core.data.BookRepository
+import com.reader.core.data.BookSourceRepository
 import com.reader.core.data.ProgressRepository
-import com.reader.core.database.BookmarkEntity
-import com.reader.core.datastore.SettingsRepository
+import com.reader.core.model.Bookmark
+import com.reader.core.data.ReaderPreferencesRepository
 import com.reader.core.model.Block
 import com.reader.core.model.BookFormat
 import com.reader.core.model.Locator
 import com.reader.core.model.TocEntry
-import com.reader.core.storage.BookFileStore
 import com.reader.engine.format.BookSource
-import com.reader.engine.format.FormatRegistry
 import com.reader.engine.layout.LayoutConfig
 import com.reader.engine.layout.SimplePaginator
 import com.reader.engine.render.FixedEngine
@@ -25,6 +24,7 @@ import com.reader.engine.render.PageCountInfo
 import com.reader.engine.render.ReaderEngine
 import com.reader.engine.render.ReflowEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,7 +56,7 @@ data class ReaderUiState(
     val mode: ReaderMode = ReaderMode.Reading,
     val toc: List<TocEntry> = emptyList(),
     val tocVisible: Boolean = false,
-    val bookmarks: List<BookmarkEntity> = emptyList(),
+    val bookmarks: List<Bookmark> = emptyList(),
     val bookmarksVisible: Boolean = false,
     val searchVisible: Boolean = false,
     val searchQuery: String = "",
@@ -87,10 +87,9 @@ class ReaderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val bookRepository: BookRepository,
     private val progressRepository: ProgressRepository,
-    private val settingsRepository: SettingsRepository,
+    private val settingsRepository: ReaderPreferencesRepository,
     private val bookmarkRepository: BookmarkRepository,
-    private val fileStore: BookFileStore,
-    private val formatRegistry: FormatRegistry,
+    private val sourceRepository: BookSourceRepository,
     private val paginator: SimplePaginator,
 ) : ViewModel() {
 
@@ -207,7 +206,13 @@ class ReaderViewModel @Inject constructor(
             val hits = mutableListOf<SearchHit>()
             val q = query.trim()
             for (ch in 0 until source.chapterCount) {
-                val chapter = runCatching { source.loadChapter(ch) }.getOrNull() ?: continue
+                val chapter = try {
+                    source.loadChapter(ch)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    continue
+                }
                 val plain = chapter.blocks.joinToString("\n") {
                     when (it) {
                         is Block.Paragraph -> it.text
@@ -274,6 +279,7 @@ class ReaderViewModel @Inject constructor(
 
     private suspend fun open() {
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
+        searchJob?.cancel()
         engine?.close()
         engine = null
         heldSource = null
@@ -284,17 +290,11 @@ class ReaderViewModel @Inject constructor(
                     return
                 }
             val settings = settingsRepository.settings.first()
-            val ext = when (book.format) {
-                BookFormat.TXT -> "txt"
-                BookFormat.MD -> "md"
-                BookFormat.EPUB -> "epub"
-                BookFormat.PDF -> "pdf"
-            }
-            val file = fileStore.originalFile(bookId, ext)
-            if (!file.exists()) {
-                _state.update { it.copy(isLoading = false, error = "文件缺失") }
-                return
-            }
+            val file = bookRepository.originalFile(bookId, book.format)
+                ?: run {
+                    _state.update { it.copy(isLoading = false, error = "文件缺失") }
+                    return
+                }
 
             val saved = progressRepository.get(bookId) ?: Locator(0, 0)
             var toc: List<TocEntry> = emptyList()
@@ -305,9 +305,15 @@ class ReaderViewModel @Inject constructor(
                     }
                 }
             } else {
-                val source = formatRegistry.open(file, file.name)
+                val source = sourceRepository.open(book)
                 heldSource = source
-                toc = runCatching { source.toc() }.getOrDefault(emptyList())
+                toc = try {
+                    source.toc()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    emptyList()
+                }
                 val config = LayoutConfig(
                     pageWidthPx = pageWidth,
                     pageHeightPx = pageHeight,
@@ -337,7 +343,15 @@ class ReaderViewModel @Inject constructor(
                 eng.pageCount.collect { info -> _state.update { s -> s.copy(pageCount = info) } }
             }
             bookRepository.updateLastRead(bookId, System.currentTimeMillis())
+        } catch (cancelled: CancellationException) {
+            if (engine != null) engine?.close() else heldSource?.close()
+            engine = null
+            heldSource = null
+            throw cancelled
         } catch (t: Throwable) {
+            if (engine != null) engine?.close() else heldSource?.close()
+            engine = null
+            heldSource = null
             _state.update { it.copy(isLoading = false, error = t.message ?: "打开失败") }
         }
     }

@@ -211,19 +211,19 @@ fun ReaderRoute(
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .clickable {
-                                viewModel.onEvent(ReaderEvent.JumpToLocator(Locator(bm.chapter, bm.offset)))
+                                viewModel.onEvent(ReaderEvent.JumpToLocator(bm.locator))
                             }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = bm.snippet.ifBlank { "第 ${bm.chapter + 1} 章" },
+                                text = bm.snippet.ifBlank { "第 ${bm.locator.chapter + 1} 章" },
                                 style = MaterialTheme.typography.bodyLarge,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text("章节 ${bm.chapter + 1}", style = MaterialTheme.typography.labelSmall,
+                            Text("章节 ${bm.locator.chapter + 1}", style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary)
                         }
                         IconButton(onClick = { viewModel.onEvent(ReaderEvent.DeleteBookmark(bm.id)) }) {

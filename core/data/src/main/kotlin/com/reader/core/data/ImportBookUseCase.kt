@@ -9,6 +9,7 @@ import com.reader.core.model.BookFormat
 import com.reader.core.storage.BookFileStore
 import com.reader.engine.format.FormatRegistry
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
@@ -24,6 +25,7 @@ class ImportBookUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(uri: Uri): Result<Book> = withContext(dispatchers.io) {
         var temp: File? = null
+        var committed: File? = null
         try {
             val name = queryDisplayName(uri) ?: "book.bin"
             val input = context.contentResolver.openInputStream(uri)
@@ -37,15 +39,20 @@ class ImportBookUseCase @Inject constructor(
             val existing = bookRepository.getBook(bookId)
             if (existing != null) {
                 temp.delete()
+                temp = null
                 return@withContext Result.Success(existing)
             }
 
             val magic = tmp.inputStream().use { it.readNBytes(16) }
             val handler = formatRegistry.detect(name, magic)
-                ?: return@withContext Result.Error(
-                    IllegalArgumentException("Unsupported"),
-                    "不支持的文件格式",
-                )
+                ?: run {
+                    temp?.delete()
+                    temp = null
+                    return@withContext Result.Error(
+                        IllegalArgumentException("Unsupported"),
+                        "不支持的文件格式",
+                    )
+                }
 
             val ext = when (handler.format) {
                 BookFormat.TXT -> "txt"
@@ -53,28 +60,35 @@ class ImportBookUseCase @Inject constructor(
                 BookFormat.EPUB -> "epub"
                 BookFormat.PDF -> "pdf"
             }
-            val committed = fileStore.commitOriginal(tmp, bookId, ext)
+            val storedFile = fileStore.commitOriginal(tmp, bookId, ext)
             temp = null
+            committed = storedFile
 
-            val source = handler.open(committed)
-            val meta = source.metadata()
-            val chapterCount = source.chapterCount
-            source.close()
+            val metadata = handler.open(storedFile).use { source ->
+                source.metadata() to source.chapterCount
+            }
+            val (meta, chapterCount) = metadata
 
             val book = Book(
                 id = bookId,
                 title = meta.title.ifBlank { name.substringBeforeLast('.') },
                 author = meta.author,
                 format = handler.format,
-                fileSize = committed.length(),
+                fileSize = storedFile.length(),
                 coverPath = null,
                 importedAt = System.currentTimeMillis(),
                 lastReadAt = null,
             )
             bookRepository.upsert(book, chapterCount = chapterCount)
+            committed = null
             Result.Success(book)
+        } catch (cancelled: CancellationException) {
+            temp?.delete()
+            committed?.delete()
+            throw cancelled
         } catch (t: Throwable) {
             temp?.delete()
+            committed?.delete()
             Result.Error(t, t.message ?: "导入失败")
         }
     }

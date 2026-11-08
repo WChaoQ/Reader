@@ -1,11 +1,4 @@
 package com.reader.core.datastore
 
-data class ReaderSettings(
-    val fontSizeSp: Float = 18f,
-    val lineSpacingMult: Float = 1.4f,
-    val paragraphSpacingPx: Float = 12f,
-    val justify: Boolean = true,
-    val theme: String = "day",
-    val pageTurnMode: String = "slide",
-    val keepScreenOn: Boolean = false,
-)
+/** Backwards-compatible alias; the shared model lives in the pure Kotlin model module. */
+typealias ReaderSettings = com.reader.core.model.ReaderSettings
