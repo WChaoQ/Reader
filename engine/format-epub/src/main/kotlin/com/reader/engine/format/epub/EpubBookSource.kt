@@ -85,7 +85,7 @@ class EpubBookSource(
     }
 
     private fun parseRootfile(containerXml: String): String? {
-        val regex = Regex("""full-path\s*=\s*\"([^\"]+)\"""", RegexOption.IGNORE_CASE)
+        val regex = Regex("full-path\\s*=\\s*\"([^\"]+)\"", RegexOption.IGNORE_CASE)
         return regex.find(containerXml)?.groupValues?.get(1)
     }
 
