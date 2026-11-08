@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.sqrt
 
 /**
  * Fixed-layout PDF engine.
@@ -132,9 +133,18 @@ class FixedEngine(
         if (closed || pageIndex !in 0 until pageTotal) return null
         return try {
             renderer.openPage(pageIndex).use { page ->
-                val width = targetWidth.coerceAtLeast(1)
-                val scale = width.toFloat() / page.width.coerceAtLeast(1)
-                val height = (page.height * scale).toInt().coerceAtLeast(1)
+                val requestedWidth = targetWidth.coerceAtLeast(1)
+                val scale = requestedWidth.toFloat() / page.width.coerceAtLeast(1)
+                val requestedHeight = (page.height * scale).toInt().coerceAtLeast(1)
+                val requestedPixels = requestedWidth.toLong() * requestedHeight.toLong()
+                val maxPixels = MAX_BITMAP_BYTES / 2L // RGB_565 uses two bytes per pixel.
+                val reduction = if (requestedPixels > maxPixels) {
+                    sqrt(maxPixels.toDouble() / requestedPixels.toDouble()).toFloat()
+                } else {
+                    1f
+                }
+                val width = (requestedWidth * reduction).toInt().coerceAtLeast(1)
+                val height = (requestedHeight * reduction).toInt().coerceAtLeast(1)
                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
                 bitmap.eraseColor(Color.WHITE)
                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
@@ -168,5 +178,6 @@ class FixedEngine(
 
     private companion object {
         const val MAX_CACHE_KB = 24 * 1024
+        const val MAX_BITMAP_BYTES = 12 * 1024 * 1024
     }
 }
