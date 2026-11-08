@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.StateFlow
 data class PageCountInfo(
     val exact: Int? = null,
     val estimated: Int = 0,
+    /** Number of pages that are currently addressable by the engine. */
+    val available: Int = exact ?: estimated,
 ) {
     val display: Int get() = exact ?: estimated
     val isExact: Boolean get() = exact != null
