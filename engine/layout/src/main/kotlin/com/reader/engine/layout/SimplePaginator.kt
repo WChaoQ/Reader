@@ -13,13 +13,14 @@ import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
 
 /**
- * Progressive chapter-first paginator with disk cache and [PageSlicer] cut heuristics.
+ * Document-order paginator with disk cache and [PageSlicer] cut heuristics.
  */
 @Singleton
 class SimplePaginator @Inject constructor(
     private val pageCache: PageCache,
 ) : Paginator {
 
+    @Suppress("UNUSED_PARAMETER")
     override fun paginate(
         book: BookSource,
         config: LayoutConfig,
