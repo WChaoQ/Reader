@@ -54,6 +54,12 @@ class OpenDocumentUseCase @Inject constructor(
                 }
             displayName = displayName.substringAfterLast('/').filterNot { it.isISOControl() }
                 .take(240).ifBlank { "未命名文档" }
+            val extension = displayName.substringAfterLast('.', "").lowercase()
+            if (extension !in SUPPORTED_EXTENSIONS) {
+                throw UnsupportedDocumentFormatException(
+                    "仅支持 TXT、EPUB、PDF 和 MD 文件",
+                )
+            }
             val mimeType = resolver.getType(uri)
             val document = DocumentHandle.fromUri(resolver, uri, displayName, mimeType, size)
 
@@ -103,6 +109,10 @@ class OpenDocumentUseCase @Inject constructor(
             if (releaseGrantOnFailure) releaseReadGrant(uri)
             Result.Error(failure, failure.message ?: "无法打开此文档")
         }
+    }
+
+    private companion object {
+        val SUPPORTED_EXTENSIONS = setOf("txt", "epub", "pdf", "md")
     }
 
     private fun releaseReadGrant(uri: Uri) {
