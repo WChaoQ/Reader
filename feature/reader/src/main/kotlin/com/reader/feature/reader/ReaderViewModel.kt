@@ -1,8 +1,6 @@
 package com.reader.feature.reader
 
 import android.graphics.Canvas
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -109,18 +107,6 @@ class ReaderViewModel @Inject constructor(
     private var pageWidth = 1080
     private var pageHeight = 1920
 
-    val textColorArgb: Int
-        get() = when (_state.value.theme) {
-            "night" -> Color(0xFFE0E0E0).toArgb()
-            "sepia" -> Color(0xFF5B4636).toArgb()
-            else -> Color(0xFF1A1A1A).toArgb()
-        }
-    val backgroundColorArgb: Int
-        get() = when (_state.value.theme) {
-            "night" -> Color(0xFF121212).toArgb()
-            "sepia" -> Color(0xFFF5E6C8).toArgb()
-            else -> Color(0xFFFAFAFA).toArgb()
-        }
 
     init {
         openJob = viewModelScope.launch { open() }
@@ -187,8 +173,13 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun drawPage(pageIndex: Int, canvas: Canvas) {
-        engine?.drawPage(pageIndex, canvas, textColorArgb, backgroundColorArgb)
+    fun drawPage(
+        pageIndex: Int,
+        canvas: Canvas,
+        textColor: Int,
+        backgroundColor: Int,
+    ) {
+        engine?.drawPage(pageIndex, canvas, textColor, backgroundColor)
     }
 
     private fun addBookmark() {
