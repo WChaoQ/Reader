@@ -39,35 +39,31 @@ object PageSlicer {
             endLine = avoidOrphanAtNextPage(layout, line, endLine, lineCount, top, contentHeight)
             endLine = preferParagraphBoundary(layout, line, endLine, top, contentHeight)
             endLine = keepHeadingWithBody(layout, line, endLine, lineCount, top, contentHeight)
-            endLine = trimTrailingBlankLines(layout, line, endLine)
 
             // Height safety net after heuristics that may have expanded the range.
             while (endLine > line && layout.getLineBottom(endLine) - top > contentHeight) {
                 endLine--
             }
 
-            pages += PageSlice(
+            val slice = PageSlice(
                 startLine = line,
                 endLine = endLine,
                 startOffset = layout.getLineStart(line),
                 endOffset = layout.getLineEnd(endLine),
             )
-            line = endLine + 1
-        }
-
-        // Drop trailing empty pages produced only by blank lines at chapter end.
-        while (pages.size > 1) {
-            val last = pages.last()
-            if (last.startOffset >= last.endOffset) {
-                pages.removeAt(pages.lastIndex)
+            val sliceText = layout.text.subSequence(slice.startOffset, slice.endOffset)
+            if (sliceText.isBlank() && pages.isNotEmpty()) {
+                // Blank-only line groups belong to the preceding page. Keeping them
+                // there avoids an otherwise navigable page with no visible content.
+                val previous = pages.removeAt(pages.lastIndex)
+                pages += previous.copy(
+                    endLine = slice.endLine,
+                    endOffset = slice.endOffset,
+                )
             } else {
-                val text = layout.text
-                if (text.subSequence(last.startOffset, last.endOffset).isBlank()) {
-                    pages.removeAt(pages.lastIndex)
-                } else {
-                    break
-                }
+                pages += slice
             }
+            line = endLine + 1
         }
 
         return pages.ifEmpty {
@@ -82,30 +78,27 @@ object PageSlicer {
     fun isValid(layout: StaticLayout, pages: List<PageSlice>): Boolean {
         if (pages.isEmpty()) return false
         val lineCount = layout.lineCount
-        val textLen = layout.text.length
+        val textLength = layout.text.length
         if (lineCount <= 0) {
-            return pages.size == 1 && pages[0].startOffset == 0 && pages[0].endOffset == 0
+            return pages.size == 1 &&
+                pages[0].startLine == 0 && pages[0].endLine == 0 &&
+                pages[0].startOffset == 0 && pages[0].endOffset == 0
         }
-        var expectedStart = 0
-        pages.forEachIndexed { index, slice ->
-            if (slice.startLine < 0 || slice.endLine < slice.startLine) return false
-            if (slice.endLine >= lineCount) return false
-            if (slice.startLine != expectedStart) return false
+
+        var expectedStartLine = 0
+        var expectedStartOffset = 0
+        pages.forEach { slice ->
+            if (slice.startLine != expectedStartLine) return false
+            if (slice.endLine < slice.startLine || slice.endLine >= lineCount) return false
+            if (slice.startOffset != expectedStartOffset) return false
             if (slice.startOffset != layout.getLineStart(slice.startLine)) return false
             if (slice.endOffset != layout.getLineEnd(slice.endLine)) return false
-            if (slice.startOffset < 0 || slice.endOffset > textLen) return false
-            if (slice.startOffset > slice.endOffset) return false
-            expectedStart = slice.endLine + 1
-            if (index == pages.lastIndex && expectedStart != lineCount) {
-                for (l in expectedStart until lineCount) {
-                    val s = layout.getLineStart(l)
-                    val e = layout.getLineEnd(l)
-                    if (!layout.text.subSequence(s, e).isBlank()) return false
-                }
-            }
+            if (slice.startOffset < 0 || slice.endOffset < slice.startOffset || slice.endOffset > textLength) return false
+
+            expectedStartLine = slice.endLine + 1
+            expectedStartOffset = slice.endOffset
         }
-        if (pages.first().startOffset != 0) return false
-        return true
+        return expectedStartLine == lineCount && expectedStartOffset == textLength
     }
 
     private fun maxEndLineByHeight(
@@ -197,24 +190,6 @@ object PageSlicer {
         return endLine - 1
     }
 
-    private fun trimTrailingBlankLines(
-        layout: StaticLayout,
-        startLine: Int,
-        endLine: Int,
-    ): Int {
-        var end = endLine
-        val text = layout.text
-        while (end > startLine) {
-            val s = layout.getLineStart(end)
-            val e = layout.getLineEnd(end)
-            if (text.subSequence(s, e).isBlank()) {
-                end--
-            } else {
-                break
-            }
-        }
-        return end
-    }
 
     private fun isParagraphEnd(layout: StaticLayout, line: Int): Boolean {
         val text = layout.text
