@@ -77,37 +77,51 @@ class TxtBookSource(
         }
 
         private fun indexChapters(document: DocumentHandle, charset: Charset): List<ByteChapterRange> {
-            val newline = "\n".toByteArray(charset)
+            val newline = "\\n".toByteArray(charset)
             val input = document.openInputStream().buffered(64 * 1024)
             val line = ByteArrayOutputStream()
+            val tail = ArrayDeque<Byte>()
             val matches = mutableListOf<Pair<String, Long>>()
             var position = 0L
             var lineStart = 0L
+            var overlong = false
+
+            fun finishLine(terminatorBytes: Int) {
+                if (!overlong) {
+                    val bytes = line.toByteArray()
+                    val contentLength = (bytes.size - terminatorBytes).coerceAtLeast(0)
+                    val decoded = bytes.copyOf(contentLength).toString(charset)
+                        .removePrefix("\\uFEFF").trimEnd('\\r').trim()
+                    if (decoded.isNotEmpty() && TxtChapterSplitter.CHAPTER_REGEX.matches(decoded)) {
+                        matches += decoded.take(80) to lineStart
+                    }
+                }
+                line.reset()
+                tail.clear()
+                overlong = false
+                lineStart = position
+            }
+
             try {
                 while (true) {
                     val value = input.read()
-                    if (value < 0 || endsWith(line, newline)) {
-                        if (line.size() <= MAX_LINE_BYTES) {
-                            val bytes = line.toByteArray()
-                            val contentLength = (bytes.size - if (value >= 0) newline.size else 0).coerceAtLeast(0)
-                            val decoded = bytes.copyOf(contentLength).toString(charset)
-                                .removePrefix("\uFEFF").trimEnd('\r').trim()
-                            if (decoded.isNotEmpty() && TxtChapterSplitter.CHAPTER_REGEX.matches(decoded)) {
-                                matches += decoded.take(80) to lineStart
-                            }
-                        }
-                        line.reset()
-                        lineStart = position
-                        if (value < 0) break
-                    } else if (line.size() < MAX_LINE_BYTES) {
+                    if (value < 0) {
+                        finishLine(0)
+                        break
+                    }
+                    position++
+                    if (!overlong) {
                         line.write(value)
-                    }
-                    if (value >= 0) {
-                        position++
-                        if (value >= 0 && !endsWith(line, newline) && line.size() == MAX_LINE_BYTES) {
-                            // Ignore overlong lines for heading detection, but continue counting bytes.
+                        if (line.size() > MAX_LINE_BYTES + newline.size) {
+                            line.reset()
+                            overlong = true
                         }
                     }
+                    tail.addLast(value.toByte())
+                    while (tail.size > newline.size) tail.removeFirst()
+                    val matchesNewline = tail.size == newline.size &&
+                        newline.indices.all { tail.elementAt(it) == newline[it] }
+                    if (matchesNewline) finishLine(newline.size)
                 }
             } finally {
                 input.close()
@@ -128,7 +142,6 @@ class TxtBookSource(
                 else splitRange(document, charset, range.byteStart, range.byteEnd, range.title)
             }
         }
-
         private fun splitRange(
             document: DocumentHandle,
             charset: Charset,
