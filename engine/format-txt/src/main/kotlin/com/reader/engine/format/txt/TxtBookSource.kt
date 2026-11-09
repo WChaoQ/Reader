@@ -8,228 +8,156 @@ import com.reader.core.model.Locator
 import com.reader.core.model.ResourceRef
 import com.reader.core.model.TocEntry
 import com.reader.engine.format.BookSource
-import java.io.File
+import com.reader.engine.format.DocumentHandle
 import java.io.InputStream
-import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 
-/**
- * Memory-conscious TXT source (architecture §6.2).
- *
- * Chapter boundaries are discovered once with a streaming decode. Ranges are stored as
- * **byte offsets** so [loadChapter] only decodes the requested slice. The full document is
- * never retained as a single String.
- */
+/** URI-backed TXT reader. It indexes byte ranges and reopens the provider stream per chapter. */
 class TxtBookSource(
-    private val file: File,
+    private val document: DocumentHandle,
     private val charset: Charset,
     private val ranges: List<ByteChapterRange>,
 ) : BookSource {
+    override val format = BookFormat.TXT
+    override val chapterCount get() = ranges.size
 
-    override val format: BookFormat = BookFormat.TXT
-    override val chapterCount: Int = ranges.size
+    override suspend fun metadata() = BookMetadata(
+        title = document.displayName.substringBeforeLast('.').ifBlank { "Untitled" },
+    )
 
-    override suspend fun metadata(): BookMetadata {
-        val title = file.nameWithoutExtension.ifBlank { "Untitled" }
-        return BookMetadata(title = title)
+    override suspend fun toc(): List<TocEntry> = ranges.mapIndexed { index, range ->
+        TocEntry(range.title ?: "第${index + 1}章", Locator(index, 0))
     }
-
-    override suspend fun toc(): List<TocEntry> =
-        ranges.mapIndexed { index, range ->
-            TocEntry(
-                title = range.title ?: "第${index + 1}章",
-                locator = Locator(chapter = index, offset = 0),
-            )
-        }
 
     override suspend fun loadChapter(index: Int): Chapter {
-        require(index in ranges.indices) { "Chapter $index out of range" }
+        require(index in ranges.indices)
         val range = ranges[index]
         val body = readSlice(range.byteStart, range.byteEnd)
-        val blocks = body
-            .split(Regex("\n{2,}"))
+        val blocks = body.split(Regex("\\n{2,}"))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
-            .map { para ->
-                val text = para.replace(Regex("(?<!\n)\n(?!\n)"), "")
-                Block.Paragraph(text = text)
-            }
-        return Chapter(
-            index = index,
-            title = range.title,
-            blocks = blocks.ifEmpty { listOf(Block.Paragraph(body.trim())) },
-        )
+            .map { Block.Paragraph(it.replace(Regex("(?<!\\n)\\n(?!\\n)"), "")) }
+        return Chapter(index, range.title, blocks.ifEmpty { listOf(Block.Paragraph(body.trim())) })
     }
 
-    override suspend fun openResource(ref: ResourceRef): InputStream {
+    override suspend fun openResource(ref: ResourceRef): InputStream =
         error("TXT has no external resources")
-    }
 
-    override fun close() {}
+    override fun close() = Unit
 
-    private fun readSlice(byteStart: Long, byteEnd: Long): String {
-        val length = (byteEnd - byteStart).toInt().coerceAtLeast(0)
-        if (length == 0) return ""
-        val bytes = ByteArray(length)
-        RandomAccessFile(file, "r").use { raf ->
-            raf.seek(byteStart)
-            var offset = 0
-            while (offset < length) {
-                val n = raf.read(bytes, offset, length - offset)
-                if (n < 0) break
-                offset += n
+    private fun readSlice(start: Long, end: Long): String {
+        val length = (end - start).coerceAtLeast(0L)
+        if (length == 0L) return ""
+        require(length <= MAX_CHAPTER_BYTES * 2) { "Chapter exceeds safe read limit" }
+        return document.openInputStream().use { input ->
+            var remaining = start
+            while (remaining > 0) {
+                val skipped = input.skip(remaining)
+                if (skipped <= 0) {
+                    if (input.read() < 0) return@use ""
+                    remaining--
+                } else remaining -= skipped
             }
+            val bytes = input.readNBytes(length.toInt())
+            val decoder = charset.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE)
+            decoder.decode(ByteBuffer.wrap(bytes)).toString().removePrefix("\uFEFF")
         }
-        val decoder = charset.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPLACE)
-            .onUnmappableCharacter(CodingErrorAction.REPLACE)
-        return decoder.decode(ByteBuffer.wrap(bytes)).toString().removePrefix("\uFEFF")
     }
 
-    data class ByteChapterRange(
-        val title: String?,
-        val byteStart: Long,
-        val byteEnd: Long,
-    )
+    data class ByteChapterRange(val title: String?, val byteStart: Long, val byteEnd: Long)
 
     companion object {
         private const val MAX_CHAPTER_BYTES = 240_000L
 
-        fun open(file: File): TxtBookSource {
-            val sample = file.inputStream().use { it.readNBytes(64 * 1024) }
+        fun open(document: DocumentHandle): TxtBookSource {
+            val sample = document.openInputStream().use { it.readNBytes(64 * 1024) }
             val charset = EncodingDetector.detect(sample)
-            val ranges = indexChapters(file, charset).ifEmpty {
-                listOf(ByteChapterRange("正文", 0L, file.length()))
-            }
-            return TxtBookSource(file, charset, ranges)
+            val ranges = indexChapters(document, charset)
+            return TxtBookSource(document, charset, ranges)
         }
 
-        private fun indexChapters(file: File, charset: Charset): List<ByteChapterRange> {
-            val counting = CountingInputStream(file.inputStream().buffered(64 * 1024))
-            val reader = counting.reader(charset)
-            val chapterRegex = TxtChapterSplitter.CHAPTER_REGEX
+        private fun indexChapters(document: DocumentHandle, charset: Charset): List<ByteChapterRange> {
+            val counter = CountingInputStream(document.openInputStream().buffered(64 * 1024))
+            val reader = counter.reader(charset)
             val matches = mutableListOf<Pair<String, Long>>()
-            val lineBuf = StringBuilder()
-            var lineByteStart = 0L
-            var pendingLineStart = 0L
-            var ch: Int
+            val line = StringBuilder()
+            var lineStart = 0L
+            var pendingStart = 0L
             while (true) {
-                ch = reader.read()
-                if (ch < 0) {
-                    val line = lineBuf.toString().trimEnd('\r')
-                    if (line.isNotEmpty() && chapterRegex.matches(line.trim())) {
-                        matches += line.trim().take(80) to lineByteStart
+                val value = reader.read()
+                if (value < 0 || value.toChar() == '\n') {
+                    val text = line.toString().trimEnd('\r').trim()
+                    if (text.isNotEmpty() && TxtChapterSplitter.CHAPTER_REGEX.matches(text)) {
+                        matches += text.take(80) to lineStart
                     }
-                    break
-                }
-                val c = ch.toChar()
-                if (c == '\n') {
-                    val line = lineBuf.toString().trimEnd('\r')
-                    if (line.isNotEmpty() && chapterRegex.matches(line.trim())) {
-                        matches += line.trim().take(80) to lineByteStart
-                    }
-                    lineBuf.clear()
-                    pendingLineStart = counting.bytesRead
-                    lineByteStart = pendingLineStart
+                    line.clear()
+                    pendingStart = counter.bytesRead
+                    lineStart = pendingStart
+                    if (value < 0) break
                 } else {
-                    if (lineBuf.isEmpty()) {
-                        lineByteStart = pendingLineStart
-                    }
-                    lineBuf.append(c)
+                    if (line.isEmpty()) lineStart = pendingStart
+                    line.append(value.toChar())
                 }
             }
             reader.close()
 
-            val fileLen = file.length()
-            if (matches.isEmpty()) {
-                return virtualSplit(0L, fileLen, null, file)
+            val length = document.size ?: document.openInputStream().use { stream ->
+                var total = 0L
+                val buffer = ByteArray(64 * 1024)
+                while (true) { val n = stream.read(buffer); if (n < 0) break; total += n }
+                total
             }
+            if (matches.isEmpty()) return splitRange(0L, length, null)
             val ranges = mutableListOf<ByteChapterRange>()
-            val firstStart = matches.first().second
-            if (firstStart > 0L) {
-                ranges += ByteChapterRange("前言", 0L, firstStart)
-            }
-            for (i in matches.indices) {
-                val start = matches[i].second
-                val end = if (i + 1 < matches.size) matches[i + 1].second else fileLen
-                ranges += ByteChapterRange(matches[i].first, start, end)
+            if (matches.first().second > 0) ranges += ByteChapterRange("前言", 0, matches.first().second)
+            matches.forEachIndexed { index, match ->
+                val end = matches.getOrNull(index + 1)?.second ?: length
+                ranges += ByteChapterRange(match.first, match.second, end)
             }
             return ranges.flatMap { range ->
-                val len = range.byteEnd - range.byteStart
-                if (len <= MAX_CHAPTER_BYTES) listOf(range)
-                else virtualSplit(range.byteStart, range.byteEnd, range.title, file)
+                if (range.byteEnd - range.byteStart <= MAX_CHAPTER_BYTES) listOf(range)
+                else splitRange(range.byteStart, range.byteEnd, range.title)
             }
         }
 
-        private fun virtualSplit(
-            byteStart: Long,
-            byteEnd: Long,
-            baseTitle: String?,
-            file: File,
-        ): List<ByteChapterRange> {
+        private fun splitRange(start: Long, end: Long, title: String?): List<ByteChapterRange> {
+            if (end <= start) return listOf(ByteChapterRange(title ?: "正文", start, end))
             val result = mutableListOf<ByteChapterRange>()
-            var i = byteStart
+            var cursor = start
             var part = 1
-            RandomAccessFile(file, "r").use { raf ->
-                while (i < byteEnd) {
-                    var end = (i + MAX_CHAPTER_BYTES).coerceAtMost(byteEnd)
-                    if (end < byteEnd) {
-                        val floor = i + MAX_CHAPTER_BYTES / 2
-                        end = scanBackForNewline(raf, end, floor) ?: end
-                    }
-                    val title = when {
-                        baseTitle != null && part == 1 -> baseTitle
-                        baseTitle != null -> "$baseTitle ($part)"
-                        else -> "第${part}部分"
-                    }
-                    result += ByteChapterRange(title, i, end)
-                    i = end
-                    part++
+            while (cursor < end) {
+                val next = (cursor + MAX_CHAPTER_BYTES).coerceAtMost(end)
+                val label = when {
+                    title == null -> "第${part}部分"
+                    part == 1 -> title
+                    else -> "$title ($part)"
                 }
+                result += ByteChapterRange(label, cursor, next)
+                cursor = next
+                part++
             }
             return result
-        }
-
-        private fun scanBackForNewline(raf: RandomAccessFile, from: Long, floor: Long): Long? {
-            val buf = ByteArray(4096)
-            var pos = from
-            while (pos > floor) {
-                val readStart = (pos - buf.size).coerceAtLeast(floor)
-                val len = (pos - readStart).toInt()
-                raf.seek(readStart)
-                raf.readFully(buf, 0, len)
-                for (idx in len - 1 downTo 0) {
-                    if (buf[idx] == '\n'.code.toByte()) {
-                        return readStart + idx + 1
-                    }
-                }
-                pos = readStart
-            }
-            return null
         }
     }
 }
 
-private class CountingInputStream(private val inner: java.io.InputStream) : java.io.InputStream() {
-    var bytesRead: Long = 0L
+private class CountingInputStream(private val inner: InputStream) : InputStream() {
+    var bytesRead = 0L
         private set
-
     override fun read(): Int {
-        val b = inner.read()
-        if (b >= 0) bytesRead++
-        return b
+        val value = inner.read()
+        if (value >= 0) bytesRead++
+        return value
     }
-
-    override fun read(b: ByteArray, off: Int, len: Int): Int {
-        val n = inner.read(b, off, len)
-        if (n > 0) bytesRead += n
-        return n
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        val count = inner.read(buffer, offset, length)
+        if (count > 0) bytesRead += count
+        return count
     }
-
     override fun close() = inner.close()
-
-    fun reader(charset: Charset): java.io.Reader =
-        java.io.InputStreamReader(this, charset)
+    fun reader(charset: Charset): java.io.Reader = java.io.InputStreamReader(this, charset)
 }
