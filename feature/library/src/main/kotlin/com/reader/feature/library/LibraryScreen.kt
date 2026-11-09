@@ -79,7 +79,7 @@ fun LibraryRoute(
     }
 
     val picker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents(),
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris: List<Uri> ->
         viewModel.onEvent(LibraryEvent.ImportUris(uris))
     }
@@ -99,12 +99,12 @@ fun LibraryRoute(
             FloatingActionButton(
                 onClick = {
                     if (!state.isImporting) {
-                        picker.launch("*/*")
+                        picker.launch(arrayOf("text/plain", "text/markdown", "application/epub+zip", "application/pdf", "*/*"))
                     }
                 },
                 modifier = Modifier.navigationBarsPadding(),
             ) {
-                Icon(Icons.Default.Add, contentDescription = "导入")
+                Icon(Icons.Default.Add, contentDescription = "打开文档")
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -116,7 +116,7 @@ fun LibraryRoute(
                 }
                 state.books.isEmpty() -> {
                     Text(
-                        text = "点击右下角导入 TXT / Markdown / EPUB / PDF",
+                        text = "点击右下角打开 TXT / Markdown / EPUB / PDF 文档",
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -158,7 +158,7 @@ fun LibraryRoute(
                 ) {
                     CircularProgressIndicator()
                     Text(
-                        text = "正在导入 ${(state.importCompleted + 1).coerceAtMost(state.importTotal)} / ${state.importTotal}",
+                        text = "正在添加 ${(state.importCompleted + 1).coerceAtMost(state.importTotal)} / ${state.importTotal}",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
