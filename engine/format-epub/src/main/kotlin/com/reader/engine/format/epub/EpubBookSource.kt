@@ -18,7 +18,7 @@ class EpubBookSource(
     private val document: DocumentHandle,
 ) : BookSource {
 
-    private val descriptor: ParcelFileDescriptor = document.openFileDescriptor()
+    private val descriptor: ParcelFileDescriptor = document.openSeekableFileDescriptor()
     private val zip: ZipFile = try {
         ZipSafe.open(File("/proc/self/fd/${descriptor.fd}"))
     } catch (failure: Throwable) {
