@@ -127,7 +127,7 @@ class TxtBookSource(
                 input.close()
             }
 
-            val length = document.size?.takeIf { it >= 0L } ?: position
+            val length = position
             if (matches.isEmpty()) return splitRange(document, charset, 0L, length, null)
             val ranges = mutableListOf<ByteChapterRange>()
             if (matches.first().second > 0L) {
