@@ -26,6 +26,8 @@ data class BookMetadata(
     val title: String,
     val author: String? = null,
     val language: String? = null,
+    /** Document-relative resource path for the cover image, if available. */
+    val coverHref: String? = null,
 )
 
 data class TocEntry(
