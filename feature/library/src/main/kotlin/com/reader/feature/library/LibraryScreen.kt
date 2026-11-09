@@ -81,7 +81,7 @@ fun LibraryRoute(
     val picker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris: List<Uri> ->
-        viewModel.onEvent(LibraryEvent.ImportUris(uris))
+        viewModel.onEvent(LibraryEvent.OpenDocuments(uris))
     }
 
     Scaffold(
@@ -98,7 +98,7 @@ fun LibraryRoute(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    if (!state.isImporting) {
+                    if (!state.isOpening) {
                         picker.launch(arrayOf("text/plain", "text/markdown", "application/epub+zip", "application/pdf", "*/*"))
                     }
                 },
@@ -146,7 +146,7 @@ fun LibraryRoute(
                     }
                 }
             }
-            if (state.isImporting) {
+            if (state.isOpening) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -158,7 +158,7 @@ fun LibraryRoute(
                 ) {
                     CircularProgressIndicator()
                     Text(
-                        text = "正在添加 ${(state.importCompleted + 1).coerceAtMost(state.importTotal)} / ${state.importTotal}",
+                        text = "正在添加 ${(state.openingCompleted + 1).coerceAtMost(state.openingTotal)} / ${state.openingTotal}",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
