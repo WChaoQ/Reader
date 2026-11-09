@@ -108,8 +108,10 @@ object DocumentTextBuilder {
                         if (result.isNotEmpty()) result.append("\n\n")
                         val alt = block.alt?.takeIf { it.isNotBlank() } ?: "image"
                         val start = result.length
-                        result.append("[$alt]")
+                        result.append("\n[ $alt ]\n")
                         result.setSpan(StyleSpan(Typeface.ITALIC), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        result.setSpan(ForegroundColorSpan(0xFF757575.toInt()), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        result.setSpan(RelativeSizeSpan(0.92f), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
                     Block.Divider -> {
                         if (result.isNotEmpty()) result.append("\n\n")
