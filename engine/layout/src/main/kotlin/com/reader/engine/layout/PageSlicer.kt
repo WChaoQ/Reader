@@ -25,6 +25,7 @@ object PageSlicer {
 
     fun slice(layout: StaticLayout, contentHeight: Int): List<PageSlice> {
         val lineCount = layout.lineCount
+        val availableHeight = contentHeight.coerceAtLeast(1)
         if (lineCount <= 0 || layout.text.isEmpty()) {
             return listOf(PageSlice(0, 0, 0, 0))
         }
@@ -34,12 +35,12 @@ object PageSlicer {
         var line = 0
         while (line < lineCount) {
             val top = layout.getLineTop(line)
-            var endLine = maxEndLineByHeight(layout, line, top, contentHeight, lineCount)
+            var endLine = maxEndLineByHeight(layout, line, top, availableHeight, lineCount)
 
             endLine = applyWidowControl(line, endLine, lineCount)
-            endLine = avoidOrphanAtNextPage(layout, line, endLine, lineCount, top, contentHeight)
-            endLine = preferParagraphBoundary(layout, line, endLine, top, contentHeight)
-            endLine = keepHeadingWithBody(layout, line, endLine, lineCount, top, contentHeight)
+            endLine = avoidOrphanAtNextPage(layout, line, endLine, lineCount, top, availableHeight)
+            endLine = preferParagraphBoundary(layout, line, endLine, availableHeight)
+            endLine = keepHeadingWithBody(layout, line, endLine, lineCount, top, availableHeight)
 
             // Height safety net after heuristics that may have expanded the range.
             while (endLine > line && layout.getLineBottom(endLine) - top > contentHeight) {
@@ -180,7 +181,6 @@ object PageSlicer {
         layout: StaticLayout,
         startLine: Int,
         endLine: Int,
-        top: Int,
         contentHeight: Int,
     ): Int {
         val pageLines = endLine - startLine + 1
@@ -217,7 +217,6 @@ object PageSlicer {
         }
         return endLine - 1
     }
-
 
     private fun isParagraphEnd(layout: StaticLayout, line: Int): Boolean {
         val text = layout.text
