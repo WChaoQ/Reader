@@ -15,6 +15,7 @@ fun BookEntity.toModel(): Book = Book(
     coverPath = coverPath,
     importedAt = importedAt,
     lastReadAt = lastReadAt,
+    sourceUri = sourceUri,
 )
 
 fun Book.toEntity(chapterCount: Int = 0, state: String = "ready"): BookEntity = BookEntity(
@@ -28,6 +29,7 @@ fun Book.toEntity(chapterCount: Int = 0, state: String = "ready"): BookEntity = 
     lastReadAt = lastReadAt,
     chapterCount = chapterCount,
     state = state,
+    sourceUri = sourceUri,
 )
 
 fun ProgressEntity.toLocator(): Locator = Locator(
