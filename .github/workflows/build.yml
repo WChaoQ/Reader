@@ -52,6 +52,10 @@ jobs:
         if: inputs.build_type == 'debug'
         run: ./gradlew :engine:format-api:testDebugUnitTest --stacktrace --no-daemon
 
+      - name: Run Layout Engine unit tests
+        if: inputs.build_type == 'debug'
+        run: ./gradlew :engine:layout:testDebugUnitTest --stacktrace --no-daemon
+
       - name: Assemble Debug
         if: inputs.build_type == 'debug'
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
