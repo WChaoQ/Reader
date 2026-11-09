@@ -10,7 +10,7 @@ import androidx.room.RoomDatabase
         BookmarkEntity::class,
         HighlightEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class ReaderDatabase : RoomDatabase() {
