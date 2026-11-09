@@ -40,9 +40,7 @@ class PdfBookSource(private val document: DocumentHandle) : BookSource {
     override suspend fun openResource(ref: ResourceRef): InputStream =
         error("PDF has no external resources")
 
-    override fun close() {
-        try { renderer.close() } finally { descriptor.close() }
-    }
+    override fun close() = renderer.close()
 
     companion object {
         fun open(document: DocumentHandle) = PdfBookSource(document)
