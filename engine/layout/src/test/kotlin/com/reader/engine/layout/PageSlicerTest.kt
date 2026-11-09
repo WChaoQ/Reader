@@ -39,6 +39,19 @@ class PageSlicerTest {
     }
 
     @Test
+    fun leadingAndTrailingWhitespaceDoNotBecomeStandalonePages() {
+        val text = "\n\nContent begins after leading whitespace and continues across several lines.\n\n"
+        val layout = createLayout(text, width = 120)
+
+        val pages = PageSlicer.slice(layout, contentHeight = 24)
+
+        assertTrue(PageSlicer.isValid(layout, pages))
+        assertTrue(pages.all { slice ->
+            layout.text.subSequence(slice.startOffset, slice.endOffset).isNotBlank()
+        })
+    }
+
+    @Test
     fun oversizedLineStillProducesAValidAdvancingPage() {
         val text = "W".repeat(500)
         val layout = createLayout(text, width = 40)
