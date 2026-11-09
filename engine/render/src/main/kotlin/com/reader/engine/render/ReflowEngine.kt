@@ -1,10 +1,6 @@
 package com.reader.engine.render
 
 import android.graphics.Canvas
-import android.graphics.Paint
-import android.text.Layout
-import android.text.StaticLayout
-import android.text.TextPaint
 import android.util.LruCache
 import com.reader.core.model.Chapter
 import com.reader.core.model.Locator
@@ -14,6 +10,7 @@ import com.reader.engine.layout.LayoutConfig
 import com.reader.engine.layout.PageSlice
 import com.reader.engine.layout.PaginationEvent
 import com.reader.engine.layout.Paginator
+import com.reader.engine.layout.StaticLayoutFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
@@ -33,6 +30,7 @@ class ReflowEngine(
     private val config: LayoutConfig,
     private val paginator: Paginator,
     private val scope: CoroutineScope,
+    private val bookId: String? = null,
     private val onLayoutReady: () -> Unit = {},
 ) : ReaderEngine {
 
@@ -61,7 +59,7 @@ class ReflowEngine(
         _pageCount.value = PageCountInfo(estimated = source.chapterCount.coerceAtLeast(1), available = 0)
 
         paginateJob = scope.launch {
-            paginator.paginate(source, config, start).collect { event ->
+            paginator.paginate(source, config, start, bookId).collect { event ->
                 when (event) {
                     is PaginationEvent.ChapterReady -> {
                         val chapter = event.chapter
@@ -103,23 +101,14 @@ class ReflowEngine(
         }
     }
 
-    /** Chapter parsing and StaticLayout construction are deliberately kept off the UI thread. */
     private suspend fun buildChapterLayout(
         chapter: Chapter,
         pages: List<PageSlice>,
     ): ChapterLayout = withContext(Dispatchers.Default) {
         val styled = DocumentTextBuilder.build(chapter.blocks)
         val plain = styled.toString()
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = config.textSizePx
-        }
-        val contentWidth = (config.pageWidthPx - 2 * config.paddingHorizontalPx).coerceAtLeast(1)
-        val layout = StaticLayout.Builder
-            .obtain(styled, 0, styled.length, paint, contentWidth)
-            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-            .setLineSpacing(0f, config.lineSpacingMult)
-            .setIncludePad(false)
-            .build()
+        val paint = StaticLayoutFactory.createPaint(config)
+        val layout = StaticLayoutFactory.create(styled, paint, config)
         ChapterLayout(
             chapterIndex = chapter.index,
             title = chapter.title,
@@ -135,7 +124,6 @@ class ReflowEngine(
         return cached
     }
 
-    /** Rebuilds an evicted chapter layout lazily instead of leaving older pages permanently blank. */
     private fun requestLayout(chapter: Int) {
         if (closed || layoutJobs.containsKey(chapter)) return
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -194,8 +182,6 @@ class ReflowEngine(
 
         val top = layout.getLineTop(slice.startLine)
         val bottom = layout.getLineBottom(slice.endLine)
-        // Scale the already-paginated page into the target surface. Adjacent-page
-        // preview must shrink the whole page, not crop the fixed-width text layout.
         val scale = minOf(
             canvas.width.toFloat() / config.pageWidthPx.coerceAtLeast(1),
             canvas.height.toFloat() / config.pageHeightPx.coerceAtLeast(1),
@@ -247,5 +233,4 @@ class ReflowEngine(
             }
         }
     }
-
 }
