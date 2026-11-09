@@ -8,6 +8,7 @@ import com.reader.core.model.ResourceRef
 import com.reader.core.model.TocEntry
 import com.reader.engine.format.BookSource
 import java.io.File
+import java.io.FileInputStream
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
@@ -40,7 +41,17 @@ class MarkdownBookSource(
     }
 
     override suspend fun openResource(ref: ResourceRef): InputStream {
-        error("Local image resources not yet supported")
+        val href = ref.href.substringBefore('#').substringBefore('?')
+        val target = when {
+            href.startsWith("/") -> File(href)
+            else -> File(file.parentFile, href)
+        }.canonicalFile
+        val parent = file.parentFile?.canonicalFile
+        require(parent != null && target.path.startsWith(parent.path)) {
+            "Resource path escapes book directory"
+        }
+        require(target.isFile) { "Missing resource: $href" }
+        return FileInputStream(target)
     }
 
     override fun close() {}
