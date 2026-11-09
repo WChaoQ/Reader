@@ -37,6 +37,7 @@ class ImportBookUseCase @Inject constructor(
         var temp: File? = null
         var committed: File? = null
         var cover: File? = null
+        var restoringExistingBook = false
 
         try {
             val displayName = queryDisplayName(uri)
@@ -66,8 +67,8 @@ class ImportBookUseCase @Inject constructor(
                     temp = null
                     return@withContext Result.Success(existing)
                 }
-                // Remove an orphaned database entry before restoring its missing source file.
-                bookRepository.delete(bookId)
+                // Keep the existing row and its progress/annotations while restoring the source.
+                restoringExistingBook = true
             }
 
             val magic = temporaryFile.inputStream().use { it.readNBytes(MAGIC_BYTES) }
@@ -125,7 +126,11 @@ class ImportBookUseCase @Inject constructor(
                     lastReadAt = null,
                 )
 
-                bookRepository.upsert(book, chapterCount = chapterCount)
+                if (restoringExistingBook) {
+                    bookRepository.restoreMissingSource(book, chapterCount)
+                } else {
+                    bookRepository.upsert(book, chapterCount = chapterCount)
+                }
                 committed = null
                 cover = null
                 Result.Success(book)
