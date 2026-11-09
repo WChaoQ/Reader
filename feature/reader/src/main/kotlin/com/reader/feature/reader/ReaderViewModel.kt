@@ -51,8 +51,6 @@ data class ReaderUiState(
     val error: String? = null,
     val currentPage: Int = 0,
     val pageCount: PageCountInfo = PageCountInfo(),
-    val chromeVisible: Boolean = false,
-    val adjacentPagesVisible: Boolean = false,
     val pageReady: Boolean = false,
     val renderRevision: Int = 0,
     val theme: String = "day",
@@ -69,12 +67,9 @@ data class ReaderUiState(
 )
 
 sealed interface ReaderEvent {
-    data object TapLeft : ReaderEvent
-    data object TapRight : ReaderEvent
-    data object TapCenter : ReaderEvent
-    data object ToggleChrome : ReaderEvent
     data class JumpToPage(val page: Int) : ReaderEvent
     data class JumpToLocator(val locator: Locator) : ReaderEvent
+    /** Jump after side-page tap in browse mode. */
     data class SelectPage(val page: Int) : ReaderEvent
     data object ToggleToc : ReaderEvent
     data object ToggleBookmarks : ReaderEvent
@@ -149,40 +144,40 @@ class ReaderViewModel @Inject constructor(
 
     fun onEvent(event: ReaderEvent) {
         when (event) {
-            ReaderEvent.TapLeft -> turn(-1)
-            ReaderEvent.TapRight -> turn(1)
-            ReaderEvent.TapCenter -> _state.update {
-                it.copy(
-                    adjacentPagesVisible = !it.adjacentPagesVisible,
-                    tocVisible = false,
-                    bookmarksVisible = false,
-                    searchVisible = false,
-                )
-            }
-            ReaderEvent.ToggleChrome -> _state.update {
-                it.copy(chromeVisible = !it.chromeVisible)
-            }
             is ReaderEvent.JumpToPage -> jump(event.page)
-            is ReaderEvent.SelectPage -> {
-                jump(event.page)
-                _state.update { it.copy(adjacentPagesVisible = false, chromeVisible = false) }
-            }
+            is ReaderEvent.SelectPage -> jump(event.page)
             is ReaderEvent.JumpToLocator -> {
                 currentLocator = event.locator
                 val page = engine?.pageIndexOf(event.locator) ?: 0
                 jump(page, updateLocator = false)
                 _state.update {
-                    it.copy(adjacentPagesVisible = false, tocVisible = false, bookmarksVisible = false, searchVisible = false, chromeVisible = false)
+                    it.copy(
+                        tocVisible = false,
+                        bookmarksVisible = false,
+                        searchVisible = false,
+                    )
                 }
             }
             ReaderEvent.ToggleToc -> _state.update {
-                it.copy(tocVisible = !it.tocVisible, bookmarksVisible = false, searchVisible = false, chromeVisible = true)
+                it.copy(
+                    tocVisible = !it.tocVisible,
+                    bookmarksVisible = false,
+                    searchVisible = false,
+                )
             }
             ReaderEvent.ToggleBookmarks -> _state.update {
-                it.copy(bookmarksVisible = !it.bookmarksVisible, tocVisible = false, searchVisible = false, chromeVisible = true)
+                it.copy(
+                    bookmarksVisible = !it.bookmarksVisible,
+                    tocVisible = false,
+                    searchVisible = false,
+                )
             }
             ReaderEvent.ToggleSearch -> _state.update {
-                it.copy(searchVisible = !it.searchVisible, tocVisible = false, bookmarksVisible = false, chromeVisible = true)
+                it.copy(
+                    searchVisible = !it.searchVisible,
+                    tocVisible = false,
+                    bookmarksVisible = false,
+                )
             }
             ReaderEvent.AddBookmark -> addBookmark()
             is ReaderEvent.DeleteBookmark -> viewModelScope.launch { bookmarkRepository.delete(event.id) }
@@ -256,17 +251,6 @@ class ReaderViewModel @Inject constructor(
             }
             _state.update { it.copy(searching = false, searchHits = hits) }
         }
-    }
-
-    private fun turn(delta: Int) {
-        val eng = engine ?: return
-        val count = eng.pageCount.value.available
-        if (count <= 0) return
-        val next = (_state.value.currentPage + delta).coerceIn(0, count - 1)
-        if (next == _state.value.currentPage) return
-        currentLocator = eng.locatorOf(next)
-        _state.update { it.copy(currentPage = next, chromeVisible = false) }
-        scheduleSaveProgress()
     }
 
     private fun jump(page: Int, updateLocator: Boolean = true) {

@@ -1,12 +1,11 @@
 package com.reader.feature.reader
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -19,11 +18,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
@@ -38,39 +40,50 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reader.core.ui.PageCanvas
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
+/**
+ * Continuous-position reader.
+ *
+ * Immersion (browseProgress = 0): current page fills the screen, no chrome.
+ * Browse (browseProgress = 1): strip scaled to ~84%, neighbors visible with gap,
+ * top bar + progress bar slid in.
+ *
+ * pagePosition is a continuous float; scale, spacing and translation are all
+ * derived from (pagePosition, browseProgress). Page index is just round(pagePosition).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderRoute(
@@ -81,6 +94,7 @@ fun ReaderRoute(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val density = LocalDensity.current
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(state.snackbar) {
         state.snackbar?.let {
@@ -100,243 +114,292 @@ fun ReaderRoute(
         else -> Color(0xFFEDEDF2)
     }
 
-    Scaffold(
-        containerColor = stageBackground,
-        snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            if (state.chromeVisible) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = state.title.ifBlank { "阅读" },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(stageBackground),
+    ) {
+        when {
+            state.error != null -> Text(
+                text = state.error!!,
+                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            state.isLoading || !state.pageReady -> CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+            )
+            else -> BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val pageWidth = minOf(maxWidth, 520.dp)
+                val pageHeight = maxHeight
+                LaunchedEffect(pageWidth, pageHeight) {
+                    val w = with(density) { pageWidth.roundToPx() }
+                    val h = with(density) { pageHeight.roundToPx() }
+                    viewModel.onViewportSized(w, h)
+                }
+
+                val total = state.pageCount.available
+                val settledPage = state.currentPage
+
+                // Continuous drivers
+                val pagePosition = remember { Animatable(settledPage.toFloat()) }
+                val browseProgress = remember { Animatable(0f) }
+                var isDragging by remember { mutableStateOf(false) }
+                var dragPosition by remember { mutableFloatStateOf(settledPage.toFloat()) }
+
+                // External page jumps (slider / toc / bookmark / search)
+                LaunchedEffect(settledPage) {
+                    if (!isDragging) {
+                        val target = settledPage.toFloat()
+                        if (abs(pagePosition.value - target) > 0.001f) {
+                            pagePosition.animateTo(
+                                target,
+                                animationSpec = spring(
+                                    dampingRatio = 0.86f,
+                                    stiffness = 420f,
+                                ),
+                            )
+                        }
+                    }
+                }
+
+                val visualPosition = if (isDragging) dragPosition else pagePosition.value
+                val progress = browseProgress.value
+
+                val pageWidthPx = with(density) { pageWidth.toPx() }
+                val browseStepPx = with(density) { (pageWidth * 0.84f + 14.dp).toPx() }
+                // Spacing interpolates: immersion uses full page width (neighbors off-screen);
+                // browse uses reduced step so neighbors peek.
+                val pageStepPx = pageWidthPx + (browseStepPx - pageWidthPx) * progress
+                val scale = 1f - 0.16f * progress
+
+                // Expand stage width in browse so neighbors can be seen on wide screens.
+                val stageWidth = pageWidth + (maxWidth - pageWidth) * progress
+
+                fun settleTo(targetPage: Int, releasePos: Float) {
+                    val clamped = targetPage.coerceIn(0, (total - 1).coerceAtLeast(0))
+                    if (clamped != settledPage) {
+                        viewModel.onEvent(ReaderEvent.JumpToPage(clamped))
+                    }
+                    scope.launch {
+                        pagePosition.snapTo(releasePos)
+                        isDragging = false
+                        pagePosition.animateTo(
+                            clamped.toFloat(),
+                            animationSpec = spring(
+                                dampingRatio = 0.86f,
+                                stiffness = 420f,
+                            ),
                         )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            viewModel.onEvent(ReaderEvent.ForceSaveProgress)
-                            onBack()
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { viewModel.onEvent(ReaderEvent.AddBookmark) }) {
-                            Icon(Icons.Default.BookmarkAdd, contentDescription = "添加书签")
-                        }
-                        IconButton(onClick = { viewModel.onEvent(ReaderEvent.ToggleBookmarks) }) {
-                            Icon(Icons.Default.Bookmark, contentDescription = "书签列表")
-                        }
-                        IconButton(onClick = { viewModel.onEvent(ReaderEvent.ToggleSearch) }) {
-                            Icon(Icons.Default.Search, contentDescription = "搜索")
-                        }
-                        IconButton(onClick = { viewModel.onEvent(ReaderEvent.ToggleToc) }) {
-                            Icon(Icons.Default.List, contentDescription = "目录")
-                        }
-                    },
-                )
-            }
-        },
-        bottomBar = {
-            if (state.chromeVisible &&
-                state.pageCount.display > 0
-            ) {
-                ReaderProgressBar(
-                    currentPage = state.currentPage,
-                    pageCount = state.pageCount.display,
-                    availablePageCount = state.pageCount.available,
-                    onPageSelected = { viewModel.onEvent(ReaderEvent.JumpToPage(it)) },
-                )
-            }
-        },
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            when {
-                state.error != null -> Text(
-                    text = state.error!!,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                state.isLoading || !state.pageReady -> CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                )
-                else -> BoxWithConstraints(
-                    modifier = Modifier.fillMaxSize().background(stageBackground),
-                ) {
-                    // Pagination remains based on the page's unscaled dimensions.
-                    val pageWidth = minOf(maxWidth, 520.dp)
-                    val pageHeight = maxHeight
-                    LaunchedEffect(pageWidth, pageHeight) {
-                        val w = with(density) { pageWidth.roundToPx() }
-                        val h = with(density) { pageHeight.roundToPx() }
-                        viewModel.onViewportSized(w, h)
                     }
+                }
 
-                    val current = state.currentPage
-                    val total = state.pageCount.available
-                    val previewProgress by animateFloatAsState(
-                        targetValue = if (state.adjacentPagesVisible) 1f else 0f,
-                        animationSpec = tween(durationMillis = 280),
-                        label = "reader-carousel-progress",
-                    )
-                    val pageWidthPx = with(density) { pageWidth.toPx() }
-                    val previewStepPx = with(density) { (pageWidth * 0.84f + 14.dp).toPx() }
-                    // The page spacing interpolates from one full page width to the
-                    // reduced preview spacing. Neighbour pages stay off-screen in
-                    // fullscreen mode instead of collapsing on top of the current page.
-                    val pageStepPx = pageWidthPx + (previewStepPx - pageWidthPx) * previewProgress
-                    var isDragging by remember { mutableStateOf(false) }
-                    var dragPosition by remember { mutableFloatStateOf(current.toFloat()) }
-                    val pagePosition = remember { Animatable(current.toFloat()) }
-                    val coroutineScope = rememberCoroutineScope()
-
-                    LaunchedEffect(state.adjacentPagesVisible) {
-                        if (state.adjacentPagesVisible) {
-                            pagePosition.snapTo(current.toFloat())
-                        }
+                fun toggleBrowse() {
+                    scope.launch {
+                        val target = if (browseProgress.value < 0.5f) 1f else 0f
+                        browseProgress.animateTo(
+                            target,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = 380f,
+                            ),
+                        )
                     }
+                }
 
-                    val visualPosition = if (state.adjacentPagesVisible) {
-                        if (isDragging) dragPosition else pagePosition.value
-                    } else {
-                        current.toFloat()
-                    }
+                Box(
+                    modifier = Modifier
+                        .width(stageWidth)
+                        .fillMaxHeight()
+                        .align(Alignment.Center)
+                        .graphicsLayer { clip = progress < 0.99f }
+                        .pointerInput(total, pageStepPx, progress) {
+                            val velocityTracker = VelocityTracker()
+                            var dragStartPosition = 0f
+                            var totalDragX = 0f
 
-                    // In fullscreen mode, clip to the page width so adjacent pages
-                    // cannot peek out on wide screens. Expand the stage while previewing.
-                    val stageWidth = pageWidth + (maxWidth - pageWidth) * previewProgress
+                            detectDragGestures(
+                                onDragStart = {
+                                    dragStartPosition = pagePosition.value
+                                    dragPosition = dragStartPosition
+                                    totalDragX = 0f
+                                    isDragging = true
+                                    velocityTracker.resetTracking()
+                                    scope.launch { pagePosition.stop() }
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    totalDragX += amount.x
+                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
 
-                    Box(
-                        modifier = Modifier.width(stageWidth)
-                            .fillMaxHeight()
-                            .align(Alignment.Center)
-                            .graphicsLayer { clip = true }
-                            .then(
-                            if (state.adjacentPagesVisible) {
-                                Modifier.pointerInput(current, total, pageStepPx) {
-                                    val velocityTracker = VelocityTracker()
-                                    var dragStartPosition = current.toFloat()
-                                    var totalDragX = 0f
-
-                                    detectDragGestures(
-                                        onDragStart = {
-                                            dragStartPosition = pagePosition.value
-                                            dragPosition = dragStartPosition
-                                            totalDragX = 0f
-                                            isDragging = true
-                                            velocityTracker.resetTracking()
-                                            coroutineScope.launch { pagePosition.stop() }
-                                        },
-                                        onDrag = { change, amount ->
-                                            change.consume()
-                                            totalDragX += amount.x
-                                            velocityTracker.addPosition(change.uptimeMillis, change.position)
-
-                                            val rawPosition = dragStartPosition - totalDragX / pageStepPx
-                                            val lastPage = (total - 1).coerceAtLeast(0).toFloat()
-                                            // Match the prototype's soft resistance at either end.
-                                            dragPosition = when {
-                                                rawPosition < 0f -> rawPosition * 0.35f
-                                                rawPosition > lastPage ->
-                                                    lastPage + (rawPosition - lastPage) * 0.35f
-                                                else -> rawPosition
-                                            }
-                                        },
-                                        onDragEnd = {
-                                            val velocityPagesPerSecond =
-                                                -velocityTracker.calculateVelocity().x / pageStepPx
-                                            val lowerTarget = (current - 1).coerceAtLeast(0)
-                                            val upperTarget = (current + 1).coerceAtMost(total - 1)
-                                            val target = (dragPosition + velocityPagesPerSecond * 0.18f)
-                                                .roundToInt()
-                                                .coerceIn(lowerTarget, upperTarget)
-                                            val releasePosition = dragPosition
-
-                                            if (target != current) {
-                                                viewModel.onEvent(ReaderEvent.JumpToPage(target))
-                                            }
-                                            coroutineScope.launch {
-                                                pagePosition.snapTo(releasePosition)
-                                                isDragging = false
-                                                pagePosition.animateTo(
-                                                    target.toFloat(),
-                                                    animationSpec = spring(
-                                                        dampingRatio = 0.86f,
-                                                        stiffness = 420f,
-                                                    ),
-                                                )
-                                            }
-                                        },
-                                        onDragCancel = {
-                                            val releasePosition = dragPosition
-                                            coroutineScope.launch {
-                                                pagePosition.snapTo(releasePosition)
-                                                isDragging = false
-                                                pagePosition.animateTo(
-                                                    current.toFloat(),
-                                                    animationSpec = spring(),
-                                                )
-                                            }
-                                        },
-                                    )
-                                }
-                            } else {
-                                Modifier.pointerInput(current, total) {
-                                    detectTapGestures { point ->
-                                        when {
-                                            point.y < size.height * 0.10f || point.y > size.height * 0.90f ->
-                                                viewModel.onEvent(ReaderEvent.ToggleChrome)
-                                            point.x < size.width * 0.30f -> viewModel.onEvent(ReaderEvent.TapLeft)
-                                            point.x > size.width * 0.70f -> viewModel.onEvent(ReaderEvent.TapRight)
-                                            else -> viewModel.onEvent(ReaderEvent.TapCenter)
-                                        }
+                                    val raw = dragStartPosition - totalDragX / pageStepPx
+                                    val lastPage = (total - 1).coerceAtLeast(0).toFloat()
+                                    // Soft resistance past ends
+                                    dragPosition = when {
+                                        raw < 0f -> raw * 0.35f
+                                        raw > lastPage -> lastPage + (raw - lastPage) * 0.35f
+                                        else -> raw
                                     }
+                                },
+                                onDragEnd = {
+                                    val velocityPages =
+                                        -velocityTracker.calculateVelocity().x / pageStepPx
+                                    val lower = (settledPage - 1).coerceAtLeast(0)
+                                    val upper = (settledPage + 1).coerceAtMost((total - 1).coerceAtLeast(0))
+                                    val target = (dragPosition + velocityPages * 0.18f)
+                                        .roundToInt()
+                                        .coerceIn(lower, upper)
+                                    settleTo(target, dragPosition)
+                                },
+                                onDragCancel = {
+                                    settleTo(settledPage, dragPosition)
+                                },
+                            )
+                        }
+                        .pointerInput(total, progress) {
+                            detectTapGestures { point ->
+                                if (isDragging) return@detectTapGestures
+                                val inBrowse = progress > 0.5f
+                                if (!inBrowse) {
+                                    // Immersion: any tap enters browse (chrome + shrink)
+                                    toggleBrowse()
+                                    return@detectTapGestures
+                                }
+                                // Browse: center page → immersion; side pages → jump
+                                val centerX = size.width / 2f
+                                val halfScaled = pageWidthPx * scale / 2f
+                                val dx = point.x - centerX
+                                when {
+                                    abs(dx) <= halfScaled -> toggleBrowse()
+                                    dx < 0 && settledPage > 0 -> {
+                                        viewModel.onEvent(ReaderEvent.SelectPage(settledPage - 1))
+                                    }
+                                    dx > 0 && settledPage < total - 1 -> {
+                                        viewModel.onEvent(ReaderEvent.SelectPage(settledPage + 1))
+                                    }
+                                    else -> toggleBrowse()
+                                }
+                            }
+                        },
+                ) {
+                    if (total > 0) {
+                        val first = (visualPosition - 2).toInt().coerceAtLeast(0)
+                        val last = (visualPosition + 2).toInt().coerceAtMost(total - 1)
+                        for (page in first..last) {
+                            val relative = page - visualPosition
+                            ReaderPageCard(
+                                page = page,
+                                width = pageWidth,
+                                height = pageHeight,
+                                background = pageBackground,
+                                showFrame = progress > 0.05f,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .graphicsLayer {
+                                        translationX = relative * pageStepPx
+                                        scaleX = scale
+                                        scaleY = scale
+                                        shape = RoundedCornerShape(8.dp * progress)
+                                        clip = progress > 0.01f
+                                    }
+                                    .zIndex(10f - abs(relative)),
+                                drawPage = viewModel::drawPage,
+                            )
+                        }
+                    }
+                }
+
+                // Chrome: top bar + progress, driven by browseProgress (slide + fade)
+                val chromeAlpha = progress
+                val topOffsetPx = with(density) { ((1f - progress) * -64.dp.toPx()).roundToInt() }
+                val bottomOffsetPx = with(density) { ((1f - progress) * 80.dp.toPx()).roundToInt() }
+
+                if (chromeAlpha > 0.01f) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = chromeAlpha),
+                        tonalElevation = 2.dp,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .graphicsLayer { alpha = chromeAlpha }
+                            .offset { IntOffset(0, topOffsetPx) }
+                            .zIndex(20f),
+                    ) {
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = state.title.ifBlank { "阅读" },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = {
+                                    viewModel.onEvent(ReaderEvent.ForceSaveProgress)
+                                    onBack()
+                                }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                                 }
                             },
-                        ),
-                    ) {
-                        if (total > 0) {
-                            val firstPage = (current - 2).coerceAtLeast(0)
-                            val lastPage = (current + 2).coerceAtMost(total - 1)
-                            for (page in firstPage..lastPage) {
-                                val relativePage = page - visualPosition
-                                ReaderPageCard(
-                                    page = page,
-                                    width = pageWidth,
-                                    height = pageHeight,
-                                    background = pageBackground,
-                                    showFrame = state.adjacentPagesVisible,
-                                    modifier = Modifier.align(Alignment.Center)
-                                        .graphicsLayer {
-                                            translationX = relativePage * pageStepPx
-                                            val scale = 1f - 0.16f * previewProgress
-                                            scaleX = scale
-                                            scaleY = scale
-                                            alpha = 1f
-                                            shape = RoundedCornerShape(8.dp)
-                                            clip = previewProgress > 0.01f
-                                        }
-                                        .zIndex((10f - kotlin.math.abs(relativePage)))
-                                        .clickable(enabled = state.adjacentPagesVisible && !isDragging) {
-                                            viewModel.onEvent(ReaderEvent.SelectPage(page))
-                                        },
-                                    drawPage = viewModel::drawPage,
-                                )
-                            }
+                            actions = {
+                                IconButton(onClick = { viewModel.onEvent(ReaderEvent.AddBookmark) }) {
+                                    Icon(Icons.Default.BookmarkAdd, contentDescription = "添加书签")
+                                }
+                                IconButton(onClick = { viewModel.onEvent(ReaderEvent.ToggleBookmarks) }) {
+                                    Icon(Icons.Default.Bookmark, contentDescription = "书签列表")
+                                }
+                                IconButton(onClick = { viewModel.onEvent(ReaderEvent.ToggleSearch) }) {
+                                    Icon(Icons.Default.Search, contentDescription = "搜索")
+                                }
+                                IconButton(onClick = { viewModel.onEvent(ReaderEvent.ToggleToc) }) {
+                                    Icon(Icons.Default.List, contentDescription = "目录")
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = Color.Transparent,
+                            ),
+                            modifier = Modifier.statusBarsPadding(),
+                        )
+                    }
+
+                    if (state.pageCount.display > 0) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = chromeAlpha),
+                            tonalElevation = 2.dp,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .graphicsLayer { alpha = chromeAlpha }
+                                .offset { IntOffset(0, bottomOffsetPx) }
+                                .zIndex(20f),
+                        ) {
+                            ReaderProgressBar(
+                                currentPage = settledPage,
+                                pageCount = state.pageCount.display,
+                                availablePageCount = state.pageCount.available,
+                                onPageSelected = { viewModel.onEvent(ReaderEvent.JumpToPage(it)) },
+                            )
                         }
                     }
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbar,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp),
+        )
     }
+
     if (state.tocVisible) {
         ModalBottomSheet(
             onDismissRequest = { viewModel.onEvent(ReaderEvent.ToggleToc) },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
-            Text("目录", style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            Text(
+                "目录",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
             if (state.toc.isEmpty()) {
                 Text("此书暂无目录", modifier = Modifier.padding(16.dp))
             }
@@ -345,7 +408,8 @@ fun ReaderRoute(
                     Text(
                         text = entry.title,
                         style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .clickable { viewModel.onEvent(ReaderEvent.JumpToLocator(entry.locator)) }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     )
@@ -359,17 +423,23 @@ fun ReaderRoute(
             onDismissRequest = { viewModel.onEvent(ReaderEvent.ToggleBookmarks) },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
-            Text("书签", style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            Text(
+                "书签",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
             if (state.bookmarks.isEmpty()) {
-                Text("暂无书签，点击顶栏书签图标添加",
+                Text(
+                    "暂无书签，点击顶栏书签图标添加",
                     modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium)
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
             LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                 items(state.bookmarks, key = { it.id }) { bm ->
                     Row(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .clickable {
                                 viewModel.onEvent(ReaderEvent.JumpToLocator(bm.locator))
                             }
@@ -383,8 +453,11 @@ fun ReaderRoute(
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text("章节 ${bm.locator.chapter + 1}", style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "章节 ${bm.locator.chapter + 1}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         }
                         IconButton(onClick = { viewModel.onEvent(ReaderEvent.DeleteBookmark(bm.id)) }) {
                             Icon(Icons.Default.Delete, contentDescription = "删除")
@@ -401,29 +474,35 @@ fun ReaderRoute(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text("搜索", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "搜索",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
                 OutlinedTextField(
                     value = state.searchQuery,
                     onValueChange = { viewModel.onEvent(ReaderEvent.Search(it)) },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     placeholder = { Text("输入关键词") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 )
                 if (state.searching) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    CircularProgressIndicator(modifier = Modifier.padding(16.dp).align(Alignment.CenterHorizontally))
                 }
             }
             LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                items(state.searchHits.size) { index ->
-                    val hit = state.searchHits[index]
+                items(state.searchHits, key = { "${it.locator.chapter}-${it.locator.offset}" }) { hit ->
                     Column(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .clickable { viewModel.onEvent(ReaderEvent.JumpToLocator(hit.locator)) }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     ) {
-                        Text(hit.chapterTitle, style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            hit.chapterTitle,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                         Text(hit.snippet, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
                     }
                 }
@@ -447,8 +526,15 @@ private fun ReaderPageCard(
             .width(width)
             .height(height)
             .then(
-                if (showFrame) Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
-                else Modifier,
+                if (showFrame) {
+                    Modifier.border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant,
+                        MaterialTheme.shapes.small,
+                    )
+                } else {
+                    Modifier
+                },
             ),
         color = background,
         tonalElevation = 0.dp,
@@ -467,25 +553,23 @@ private fun ReaderProgressBar(
     availablePageCount: Int,
     onPageSelected: (Int) -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-            Slider(
-                value = currentPage.toFloat(),
-                onValueChange = { onPageSelected(it.roundToInt()) },
-                valueRange = 0f..(availablePageCount - 1).coerceAtLeast(1).toFloat(),
-                enabled = availablePageCount > 1,
-                steps = 0,
-                modifier = Modifier.fillMaxWidth().height(28.dp),
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+        Slider(
+            value = currentPage.toFloat(),
+            onValueChange = { onPageSelected(it.roundToInt()) },
+            valueRange = 0f..(availablePageCount - 1).coerceAtLeast(1).toFloat(),
+            enabled = availablePageCount > 1,
+            steps = 0,
+            modifier = Modifier.fillMaxWidth().height(28.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("第 ${currentPage + 1} 页", style = MaterialTheme.typography.labelMedium)
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "${currentPage + 1} / $pageCount",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("第 ${currentPage + 1} 页", style = MaterialTheme.typography.labelMedium)
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = "${currentPage + 1} / $pageCount",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }
