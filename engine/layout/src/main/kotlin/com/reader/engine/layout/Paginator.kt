@@ -7,10 +7,9 @@ import kotlinx.coroutines.flow.Flow
 
 interface Paginator {
     /**
-     * Results must be emitted in ascending chapter order because the render engine
-     * exposes dense global page indexes. Publishing later chapters first would make
-     * already-visible page indexes shift when preceding chapters are eventually loaded.
-     *
+     * Implementations may prioritize the chapter containing [start] and emit chapters
+     * progressively. Consumers must retain a stable [Locator], not a numeric page index,
+     * because the dense global page index can shift as earlier chapters become available.
      * @param bookId when non-null, chapter page slices are read/written under
      *   pages/<bookId>/<layoutHash>/ for reuse across sessions.
      */
