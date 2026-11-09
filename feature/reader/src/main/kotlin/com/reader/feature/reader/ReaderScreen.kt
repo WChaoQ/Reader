@@ -5,7 +5,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,10 +16,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.key
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -50,7 +52,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,19 +60,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reader.core.ui.PageCanvas
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -155,80 +151,26 @@ fun ReaderRoute(
                 val total = state.pageCount.available
                 val settledPage = state.currentPage
 
-                val pagePosition = remember { Animatable(settledPage.toFloat()) }
                 val browseProgress = remember { Animatable(0f) }
-                var isDragging by remember { mutableStateOf(false) }
-                var dragPosition by remember { mutableFloatStateOf(settledPage.toFloat()) }
-                // Suppress external jump animation while a local settle is in flight.
-                var suppressExternalAnim by remember { mutableStateOf(false) }
-                // Stable snapshot of settled page for gesture closures (updated every frame via state).
                 var settledPageRef by remember { mutableIntStateOf(settledPage) }
                 settledPageRef = settledPage
 
-                // External jumps (slider / toc / bookmark / search) only.
-                LaunchedEffect(settledPage) {
-                    if (isDragging || suppressExternalAnim) {
-                        suppressExternalAnim = false
-                        return@LaunchedEffect
-                    }
-                    val target = settledPage.toFloat()
-                    if (abs(pagePosition.value - target) > 0.001f) {
-                        pagePosition.animateTo(
-                            target,
-                            animationSpec = spring(
-                                dampingRatio = 0.86f,
-                                stiffness = 420f,
-                            ),
-                        )
-                    }
-                }
-
-                val visualPosition = if (isDragging) dragPosition else pagePosition.value
                 val progress = browseProgress.value
+                val isBrowse = progress >= 0.5f
+                val thumbnailWidth = pageWidth * 0.78f
+                val thumbnailHeight = pageHeight * 0.78f
+                val thumbnailListState = rememberLazyListState()
 
-                val pageWidthPx = with(density) { pageWidth.toPx() }
-                // Browse scale ~72% so neighbors read clearly; gap between scaled pages.
-                val browseScale = 0.72f
-                val browseGapPx = with(density) { 16.dp.toPx() }
-                val browseStepPx = pageWidthPx * browseScale + browseGapPx
-                val pageStepPx = pageWidthPx + (browseStepPx - pageWidthPx) * progress
-                val scale = 1f - (1f - browseScale) * progress
-
-                fun settleTo(targetPage: Int, releasePos: Float) {
-                    val clamped = targetPage.coerceIn(0, (total - 1).coerceAtLeast(0))
-                    scope.launch {
-                        suppressExternalAnim = true
-                        pagePosition.snapTo(releasePos)
-                        isDragging = false
-                        if (clamped != settledPageRef) {
-                            viewModel.onEvent(ReaderEvent.JumpToPage(clamped))
+                // Keep the selected page centered whenever the thumbnail strip opens
+                // or an external navigation action changes the current page.
+                LaunchedEffect(isBrowse, settledPage, total, thumbnailWidth) {
+                    if (isBrowse && total > 0) {
+                        val centerOffset = with(density) {
+                            -((pageWidth - thumbnailWidth) / 2).roundToPx()
                         }
-                        pagePosition.animateTo(
-                            clamped.toFloat(),
-                            animationSpec = spring(
-                                dampingRatio = 0.86f,
-                                stiffness = 420f,
-                            ),
-                        )
-                    }
-                }
-
-                fun animateToPage(targetPage: Int) {
-                    val clamped = targetPage.coerceIn(0, (total - 1).coerceAtLeast(0))
-                    if (clamped == settledPageRef && abs(pagePosition.value - clamped.toFloat()) < 0.001f) {
-                        return
-                    }
-                    scope.launch {
-                        suppressExternalAnim = true
-                        if (clamped != settledPageRef) {
-                            viewModel.onEvent(ReaderEvent.JumpToPage(clamped))
-                        }
-                        pagePosition.animateTo(
-                            clamped.toFloat(),
-                            animationSpec = spring(
-                                dampingRatio = 0.86f,
-                                stiffness = 420f,
-                            ),
+                        thumbnailListState.animateScrollToItem(
+                            index = settledPage.coerceIn(0, total - 1),
+                            scrollOffset = centerOffset,
                         )
                     }
                 }
@@ -246,119 +188,37 @@ fun ReaderRoute(
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .align(Alignment.Center)
-                        // Only clip in immersion so neighbors cannot peek; browse needs overflow.
-                        .graphicsLayer { clip = progress < 0.5f }
-                        // Stable keys: do NOT restart gesture detector when progress/step animates.
-                        .pointerInput(total) {
-                            val velocityTracker = VelocityTracker()
-                            var dragStartPosition = 0f
-                            var totalDragX = 0f
-
-                            detectDragGestures(
-                                onDragStart = {
-                                    // Use current visual position (may still be animating).
-                                    val start = if (isDragging) dragPosition else pagePosition.value
-                                    dragStartPosition = start
-                                    dragPosition = start
-                                    totalDragX = 0f
-                                    isDragging = true
-                                    velocityTracker.resetTracking()
-                                    scope.launch { pagePosition.stop() }
-                                },
-                                onDrag = { change, amount ->
-                                    change.consume()
-                                    totalDragX += amount.x
-                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
-
-                                    // Step depends on current browse progress (read live).
-                                    val step = pageWidthPx +
-                                        (pageWidthPx * browseScale + browseGapPx - pageWidthPx) *
-                                        browseProgress.value
-                                    val safeStep = step.coerceAtLeast(1f)
-                                    val raw = dragStartPosition - totalDragX / safeStep
-                                    val lastPage = (total - 1).coerceAtLeast(0).toFloat()
-                                    dragPosition = when {
-                                        raw < 0f -> raw * 0.35f
-                                        raw > lastPage -> lastPage + (raw - lastPage) * 0.35f
-                                        else -> raw
-                                    }
-                                },
-                                onDragEnd = {
-                                    val step = pageWidthPx +
-                                        (pageWidthPx * browseScale + browseGapPx - pageWidthPx) *
-                                        browseProgress.value
-                                    val safeStep = step.coerceAtLeast(1f)
-                                    val velocityPages =
-                                        -velocityTracker.calculateVelocity().x / safeStep
-                                    val current = settledPageRef
-                                    val lower = (current - 1).coerceAtLeast(0)
-                                    val upper = (current + 1).coerceAtMost((total - 1).coerceAtLeast(0))
-                                    val target = (dragPosition + velocityPages * 0.18f)
-                                        .roundToInt()
-                                        .coerceIn(lower, upper)
-                                    settleTo(target, dragPosition)
-                                },
-                                onDragCancel = {
-                                    settleTo(settledPageRef, dragPosition)
-                                },
-                            )
-                        }
-                        .pointerInput(total) {
-                            detectTapGestures { point ->
-                                if (isDragging) return@detectTapGestures
-                                val inBrowse = browseProgress.value > 0.5f
-                                val current = settledPageRef
-                                if (!inBrowse) {
-                                    // Immersion: left / right zones turn page; center enters browse.
-                                    when {
-                                        point.x < size.width * 0.30f -> {
-                                            if (current > 0) animateToPage(current - 1)
-                                        }
-                                        point.x > size.width * 0.70f -> {
-                                            if (current < total - 1) animateToPage(current + 1)
-                                        }
-                                        else -> toggleBrowse()
-                                    }
-                                    return@detectTapGestures
-                                }
-                                // Browse: center page → immersion; side pages → jump.
-                                val centerX = size.width / 2f
-                                val halfScaled = pageWidthPx * scale / 2f
-                                val dx = point.x - centerX
-                                when {
-                                    abs(dx) <= halfScaled -> toggleBrowse()
-                                    dx < 0 && current > 0 -> animateToPage(current - 1)
-                                    dx > 0 && current < total - 1 -> animateToPage(current + 1)
-                                    else -> toggleBrowse()
-                                }
-                            }
-                        },
-                ) {
-                    if (total > 0) {
-                        val first = (visualPosition - 2).toInt().coerceAtLeast(0)
-                        val last = (visualPosition + 2).toInt().coerceAtMost(total - 1)
-                        for (page in first..last) {
-                            val relative = page - visualPosition
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (!isBrowse) {
+                        key(settledPage, state.renderRevision) {
                             ReaderPageCard(
-                                page = page,
+                                page = settledPage,
                                 width = pageWidth,
                                 height = pageHeight,
                                 background = pageBackground,
                                 modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .graphicsLayer {
-                                        translationX = relative * pageStepPx
-                                        scaleX = scale
-                                        scaleY = scale
-                                        // Soft corner only while browsing; no hard border.
-                                        shape = RoundedCornerShape(6.dp * progress)
-                                        clip = progress > 0.01f
-                                    }
-                                    .zIndex(10f - abs(relative)),
+                                    .fillMaxSize()
+                                    .pointerInput(settledPage, total) {
+                                        detectTapGestures { point ->
+                                            when {
+                                                point.x < size.width * 0.30f -> {
+                                                    if (settledPage > 0) {
+                                                        viewModel.onEvent(
+                                                            ReaderEvent.JumpToPage(settledPage - 1)
+                                                        )
+                                                    }
+                                                }
+                                                point.x > size.width * 0.70f -> {
+                                                    if (settledPage < total - 1) {
+                                                        viewModel.onEvent(
+                                                            ReaderEvent.JumpToPage(settledPage + 1)
+                                                        )
+                                                    }
+                                                }
+                                                else -> toggleBrowse()
+                                            }
+                                        }
+                                    },
                                 drawPage = { page, canvas ->
                                     viewModel.drawPage(
                                         pageIndex = page,
@@ -368,6 +228,48 @@ fun ReaderRoute(
                                     )
                                 },
                             )
+                        }
+                    } else {
+                        LazyRow(
+                            state = thumbnailListState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 0.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            items(
+                                count = total,
+                                key = { page -> page },
+                            ) { page ->
+                                key(page, state.renderRevision) {
+                                    ReaderPageCard(
+                                        page = page,
+                                        width = thumbnailWidth,
+                                        height = thumbnailHeight,
+                                        background = pageBackground,
+                                        modifier = Modifier.clickable {
+                                            viewModel.onEvent(ReaderEvent.JumpToPage(page))
+                                            scope.launch {
+                                                browseProgress.animateTo(
+                                                    0f,
+                                                    animationSpec = spring(
+                                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                                        stiffness = 380f,
+                                                    ),
+                                                )
+                                            }
+                                        },
+                                        drawPage = { pageIndex, canvas ->
+                                            viewModel.drawPage(
+                                                pageIndex = pageIndex,
+                                                canvas = canvas,
+                                                textColor = textColorArgb,
+                                                backgroundColor = backgroundColorArgb,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
