@@ -9,6 +9,7 @@ import com.reader.core.model.TocEntry
 import com.reader.engine.format.BookSource
 import com.reader.engine.format.DocumentHandle
 import java.io.InputStream
+import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 
 /** Markdown is parsed from the provider stream; no original file is copied to app storage. */
@@ -45,14 +46,26 @@ class MarkdownBookSource(
             require(size == null || size <= MAX_MARKDOWN_BYTES) {
                 "Markdown document is too large to parse safely"
             }
-            val text = document.openInputStream().bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-                .removePrefix("\uFEFF")
-            require(text.length <= MAX_MARKDOWN_CHARS) { "Markdown document is too large to parse safely" }
+            val bytes = document.openInputStream().use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(16 * 1024)
+                var total = 0L
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    require(total <= MAX_MARKDOWN_BYTES) {
+                        "Markdown document is too large to parse safely"
+                    }
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            }
+            val text = bytes.toString(StandardCharsets.UTF_8).removePrefix("\uFEFF")
             val chapters = MarkdownParser.parseDocument(text)
             return MarkdownBookSource(document, chapters)
         }
 
         private const val MAX_MARKDOWN_BYTES = 32L * 1024 * 1024
-        private const val MAX_MARKDOWN_CHARS = 32 * 1024 * 1024
     }
 }
