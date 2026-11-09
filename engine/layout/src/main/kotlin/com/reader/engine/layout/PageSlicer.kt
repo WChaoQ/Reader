@@ -30,6 +30,7 @@ object PageSlicer {
         }
 
         val pages = mutableListOf<PageSlice>()
+        var pendingLeadingBlank: PageSlice? = null
         var line = 0
         while (line < lineCount) {
             val top = layout.getLineTop(line)
@@ -52,18 +53,44 @@ object PageSlicer {
                 endOffset = layout.getLineEnd(endLine),
             )
             val sliceText = layout.text.subSequence(slice.startOffset, slice.endOffset)
-            if (sliceText.isBlank() && pages.isNotEmpty()) {
-                // Blank-only line groups belong to the preceding page. Keeping them
-                // there avoids an otherwise navigable page with no visible content.
-                val previous = pages.removeAt(pages.lastIndex)
-                pages += previous.copy(
-                    endLine = slice.endLine,
-                    endOffset = slice.endOffset,
-                )
+            if (sliceText.isBlank()) {
+                if (pages.isNotEmpty()) {
+                    // Blank-only line groups belong to the preceding page.
+                    val previous = pages.removeAt(pages.lastIndex)
+                    pages += previous.copy(
+                        endLine = slice.endLine,
+                        endOffset = slice.endOffset,
+                    )
+                } else {
+                    val pending = pendingLeadingBlank
+                    pendingLeadingBlank = if (pending == null) {
+                        slice
+                    } else {
+                        pending.copy(endLine = slice.endLine, endOffset = slice.endOffset)
+                    }
+                }
             } else {
-                pages += slice
+                val leadingBlank = pendingLeadingBlank
+                pages += if (leadingBlank == null) {
+                    slice
+                } else {
+                    slice.copy(
+                        startLine = leadingBlank.startLine,
+                        startOffset = leadingBlank.startOffset,
+                    )
+                }
+                pendingLeadingBlank = null
             }
             line = endLine + 1
+        }
+
+        pendingLeadingBlank?.let { blank ->
+            if (pages.isNotEmpty()) {
+                val previous = pages.removeAt(pages.lastIndex)
+                pages += previous.copy(endLine = blank.endLine, endOffset = blank.endOffset)
+            } else {
+                pages += blank
+            }
         }
 
         return pages.ifEmpty {
