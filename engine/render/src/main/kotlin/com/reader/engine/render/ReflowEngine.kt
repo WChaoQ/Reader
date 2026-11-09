@@ -110,7 +110,7 @@ class ReflowEngine(
         chapter: Chapter,
         pages: List<PageSlice>,
     ): ChapterLayout = withContext(Dispatchers.Default) {
-        val styled = DocumentTextBuilder.build(chapter.blocks)
+        val styled = DocumentTextBuilder.build(chapter.blocks, config.paragraphSpacingPx)
         val plain = styled.toString()
         val paint = StaticLayoutFactory.createPaint(config)
         val layout = StaticLayoutFactory.create(styled, paint, config)
