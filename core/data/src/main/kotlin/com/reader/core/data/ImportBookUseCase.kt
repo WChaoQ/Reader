@@ -54,7 +54,7 @@ class ImportBookUseCase @Inject constructor(
                 )
 
             val (temporaryFile, bookId) = input.use {
-                fileStore.copyAndHash(it, displayName)
+                fileStore.copyAndHash(it)
             }
             temp = temporaryFile
 
