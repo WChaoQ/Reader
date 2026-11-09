@@ -394,7 +394,7 @@ Layout 模块通过 Robolectric 测试 StaticLayout 真实行布局，覆盖空�
 
 - 四种格式解析器的边界行为、异常模型和大文件性能。
 - Room Entity/DAO/Repository 的数据关系与 Migration。
-- 当前整文件复制策略的存储占用，以及未来是否需要可选 URI 引用模式。
+- 不同 DocumentProvider 的持久化授权、文件失效恢复和 seekable descriptor 兼容性。
 - EPUB 是否按需读取章节且没有额外整本解压副本。
 - PDF 页面缓存是否有上限、资源是否及时释放。
 - ViewModel 是否统一使用 StateFlow/UDF 和生命周期感知收集。
@@ -407,7 +407,7 @@ Layout 模块通过 Robolectric 测试 StaticLayout 真实行布局，覆盖空�
 2. 已将书签和阅读设置模型移入纯 Kotlin core:model；Reader 和 Settings Feature 不再接触 Room Entity 或 DataStore 实现。
 3. 已通过 BookSourceRepository 和 BookRepository 隐藏格式注册与文件存储细节。
 4. 继续为四种格式建立真实文件样本、异常输入、取消和资源释放测试。
-5. 评估整文件复制的存储成本，并建立大文档内存与性能基线。
+5. 验证不同 DocumentProvider 的 URI 持久化、随机访问和大文档内存/性能边界。
 
 ## 14. 官方规范与参考资料
 
