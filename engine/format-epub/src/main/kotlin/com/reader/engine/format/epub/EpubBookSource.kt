@@ -33,19 +33,25 @@ class EpubBookSource(
     private val coverPath: String?
 
     init {
-        val containerXml = ZipSafe.readEntry(zip, "META-INF/container.xml").toString(Charsets.UTF_8)
-        opfPath = parseRootfile(containerXml)
-            ?: error("No rootfile in container.xml")
-        opfDir = opfPath.substringBeforeLast('/', missingDelimiterValue = "")
-        val opfXml = ZipSafe.readEntry(zip, opfPath).toString(Charsets.UTF_8)
-        opf = OpfParser.parse(opfXml)
-        spineHrefs = opf.spine.mapNotNull { id -> opf.manifest[id]?.href }.map { href ->
-            if (opfDir.isEmpty()) href else ZipSafe.resolveHref(opfPath, href)
-        }
-        require(spineHrefs.isNotEmpty()) { "EPUB spine is empty or invalid" }
-        tocEntries = EpubTocParser.parse(zip, opf, opfPath, spineHrefs)
-        coverPath = EpubTocParser.coverHref(opf)?.let { href ->
-            if (opfDir.isEmpty()) href else ZipSafe.resolveHref(opfPath, href)
+        try {
+            val containerXml = ZipSafe.readEntry(zip, "META-INF/container.xml").toString(Charsets.UTF_8)
+            opfPath = parseRootfile(containerXml)
+                ?: error("No rootfile in container.xml")
+            opfDir = opfPath.substringBeforeLast('/', missingDelimiterValue = "")
+            val opfXml = ZipSafe.readEntry(zip, opfPath).toString(Charsets.UTF_8)
+            opf = OpfParser.parse(opfXml)
+            spineHrefs = opf.spine.mapNotNull { id -> opf.manifest[id]?.href }.map { href ->
+                if (opfDir.isEmpty()) href else ZipSafe.resolveHref(opfPath, href)
+            }
+            require(spineHrefs.isNotEmpty()) { "EPUB spine is empty or invalid" }
+            tocEntries = EpubTocParser.parse(zip, opf, opfPath, spineHrefs)
+            coverPath = EpubTocParser.coverHref(opf)?.let { href ->
+                if (opfDir.isEmpty()) href else ZipSafe.resolveHref(opfPath, href)
+            }
+        } catch (failure: Throwable) {
+            runCatching { zip.close() }
+            runCatching { descriptor.close() }
+            throw failure
         }
     }
 
@@ -56,7 +62,7 @@ class EpubBookSource(
 
     override suspend fun metadata(): BookMetadata =
         BookMetadata(
-            title = opf.title ?: document.displayName.substringBeforeLast('.') ,
+            title = opf.title ?: document.displayName.substringBeforeLast('.'),
             author = opf.author,
             coverHref = coverPath,
         )
