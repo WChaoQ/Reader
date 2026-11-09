@@ -19,11 +19,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.key
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -67,7 +67,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * Continuous-position reader.
+ * Full-screen reader with a horizontally scrollable page-preview mode.
  *
  * Immersion (browseProgress = 0): current page fills the screen, no chrome.
  * Browse (browseProgress = 1): a horizontally scrollable strip of uniformly sized
