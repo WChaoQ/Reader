@@ -11,7 +11,7 @@
 ### 产品边界
 
 - 仅处理用户主动选择或授权访问的本地文档。
-- 通过 Android Storage Access Framework（SAF）让用户选择文档；当前导入流程将文件复制到应用私有目录并以内容哈希建立书籍 ID。
+- 通过 Android Storage Access Framework（SAF）的 ACTION_OPEN_DOCUMENT 选择文档；持久化只读 content URI 授权，原始文档始终留在用户选择的 DocumentProvider 中。
 - 支持 EPUB、PDF、Markdown、TXT。
 - 书籍索引、阅读进度和偏好保存在本地。
 - 不包含账号、云同步、在线书城或远程内容抓取。
@@ -85,7 +85,7 @@ Domain / UseCase 层不是强制层。只有当业务逻辑被多个 ViewModel �
 | :core:common | 真正跨模块复用的通用基础能力；避免成为无边界杂物模块。 |
 | :core:database | Room Database、Entity、DAO、Migration 和 schema。 |
 | :core:datastore | DataStore 偏好设置读写与 Flow 暴露。 |
-| :core:storage | SAF 来源文件访问、应用私有原文件管理、输入流/描述符和必要缓存管理。当前实现不持久化源 URI。 |
+| :core:storage | 仅管理可重建缓存；文档 URI、输入流和描述符由统一 DocumentHandle / ContentResolver 访问。旧版本私有原文件仅作兼容读取。 |
 | :core:data | Repository 实现，协调数据库、设置、文件存储和格式 API。 |
 | :core:designsystem | Material 3 主题、颜色、字体、形状和设计令牌。 |
 | :core:ui | 不依赖具体 Feature 的通用 Compose UI 组件。 |
@@ -126,21 +126,21 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 
 ### 4.1 导入
 
-用户点击导入 → SAF 返回 content URI → ImportBookUseCase 通过 ContentResolver 读取输入流 → BookFileStore 复制文件并计算 SHA-256 → FormatRegistry 选择格式实现并读取元数据 → Room 保存书籍索引 → Flow 更新书库 UI。
+用户点击打开文档 → ACTION_OPEN_DOCUMENT 返回一个或多个 content URI → 读取显示名/MIME/大小并检测格式 → 解析器通过 ContentResolver 流或 ParcelFileDescriptor 读取原件 → 持久化只读 URI 授权 → Room 只保存 URI、元数据和阅读状态 → 打开首个成功文档并由 Flow 更新书库。
 
 约束：
 
 - SAF 返回的 content:// URI 不是普通文件路径，必须通过 ContentResolver 打开。
-- **当前实现会复制完整原文件**到应用私有目录 `filesDir/books/<bookId>/original.<ext>`，并以 SHA-256 内容摘要（截取前 32 位十六进制字符）作为书籍 ID。
-- 当前实现不持久化源 URI，也不依赖长期 URI 授权；原始文件随应用数据存储，删除书籍时由 BookFileStore 删除。
-- 该方案便于离线读取和稳定随机访问，但应用私有数据会随导入文件大小增长。若未来改为 URI 引用模式，必须单独设计持久化授权、源文件失效恢复和 PDF 随机访问，不能只删除复制步骤。
+- **当前实现不复制原文件**，不对源文件内容计算 SHA-256。书籍 ID 由 content URI 的 SHA-256 摘要生成；Room 保存 `sourceUri`，并使用 `takePersistableUriPermission()` 保留只读访问。
+- 删除书籍时释放持久化 URI 授权；文件被移动、删除或提供程序撤销访问时，保留书籍元数据并提示用户重新选择。
+- PDF 和 EPUB 需要随机访问：PDF 直接把可 seek 的 ParcelFileDescriptor 交给 PdfRenderer；EPUB 通过描述符访问 ZIP 中央目录。若 DocumentProvider 只提供管道/非 seekable descriptor，不复制源文件，明确提示用户先下载到本地再打开。
 - 封面、章节索引和渲染缓存应与原始文件分开管理，并允许重建。
 - 元数据提取失败不应导致崩溃；应保留可识别的文件名和格式信息。
 - 导入应具备幂等性，避免重复记录。
 
 ### 4.2 打开和阅读
 
-用户选择书籍 → Reader ViewModel → BookRepository 获取书籍记录和应用私有原文件 → PDF 使用 FixedEngine，重排文本通过 BookSourceRepository / FormatRegistry 分发至 TXT / Markdown / EPUB → Layout → Render → Compose 阅读界面。
+用户选择书籍 → Reader ViewModel → BookRepository 获取书籍记录 → BookSourceRepository 根据 sourceUri 建立 DocumentHandle → PDF 使用 PdfRenderer / FixedEngine，重排文本通过 FormatRegistry 分发至 TXT / Markdown / EPUB → Layout → Render → Compose 阅读界面。
 
 格式差异应尽量在 Engine 内部消化。Feature 不应散落大量按格式分支的解析代码。
 
@@ -190,7 +190,7 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 
 当前 format-api 通过 `FormatHandler`、`BookSource` 和 `FormatRegistry` 提供统一契约，并明确以下规则：
 
-- `FormatHandler.canHandle` 只根据文件名和有限 magic bytes 判断格式，不执行 I/O。
+- `FormatHandler.canHandle` 只根据文件名、MIME 类型和有限 magic bytes 判断格式，不执行 I/O。
 - 每种 `BookFormat` 只能注册一个 handler；一个文件最多匹配一个 handler，避免依赖 Hilt Set 的遍历顺序。
 - 打开文档并读取元数据。
 - 获取目录或章节结构（格式支持时）。
@@ -296,16 +296,16 @@ Layout 模块通过 Robolectric 测试 StaticLayout 真实行布局，覆盖空�
 | 书籍元数据和导入记录 | Room | 不以内存列表作为持久来源 |
 | 阅读进度 | Room | 使用统一 Locator |
 | 阅读偏好 | DataStore | 主题、字号、行距等 |
-| 原始文档 | 应用私有目录 `filesDir/books/<bookId>/original.<ext>` | 当前导入流程复制完整原文件；删除书籍时一并删除 |
+| 原始文档 | 用户选择的 DocumentProvider | 只保存 content URI 和持久化只读授权；应用不复制或修改原件 |
 | 临时解析/渲染缓存 | 缓存目录或内存 | 可清理、可重建 |
 | 页面临时交互状态 | ViewModel / SavedState | 不替代持久进度 |
 
 文件生命周期约束：
 
-- 仅通过 SAF 选择来源文件，并通过 ContentResolver 读取；不申请宽泛存储权限。
-- 当前原文件保存在应用私有目录，启动阅读不再依赖源 URI 是否仍有效。
-- 文件缺失时保留书籍元数据并展示可恢复错误；删除书籍时分别处理数据库记录和原文件/缓存。
-- 应用私有文件可能参与系统备份；备份策略必须明确是否备份原始书籍，避免意外产生大体积备份。
+- 使用 ACTION_OPEN_DOCUMENT / OpenMultipleDocuments，通过 ContentResolver 读取；不申请 READ_EXTERNAL_STORAGE 或 MANAGE_EXTERNAL_STORAGE 等宽泛存储权限。
+- 新增书籍始终从原始 content URI 打开；旧版本已复制的书籍通过 sourceUri=null 的兼容路径读取原文件。
+- URI 授权失效或原文件移动/删除时保留书籍元数据，提示重新选择；删除书籍时释放 URI grant 并清理可重建缓存。
+- URI grant 不应假定会随备份恢复；备份恢复后若授权不可用，必须提示重新选择原件。
 
 ## 9. 依赖注入与构建
 
