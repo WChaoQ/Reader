@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.reader.core.common.Result
 import com.reader.core.data.BookRepository
-import com.reader.core.data.ImportBookUseCase
+import com.reader.core.data.OpenDocumentUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -20,7 +20,7 @@ import javax.inject.Inject
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val bookRepository: BookRepository,
-    private val importBook: ImportBookUseCase,
+    private val openDocument: OpenDocumentUseCase,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryUiState())
@@ -42,7 +42,7 @@ class LibraryViewModel @Inject constructor(
     fun onEvent(event: LibraryEvent) {
         when (event) {
             LibraryEvent.Refresh -> Unit
-            is LibraryEvent.ImportUris -> import(event.uris)
+            is LibraryEvent.OpenDocuments -> openDocuments(event.uris)
             is LibraryEvent.OpenBook -> viewModelScope.launch {
                 _navigateToReader.emit(event.bookId)
             }
@@ -55,15 +55,15 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    private fun import(uris: List<android.net.Uri>) {
-        if (uris.isEmpty() || _state.value.isImporting) return
+    private fun openDocuments(uris: List<android.net.Uri>) {
+        if (uris.isEmpty() || _state.value.isOpening) return
 
         viewModelScope.launch {
             _state.update {
                 it.copy(
-                    isImporting = true,
-                    importCompleted = 0,
-                    importTotal = uris.size,
+                    isOpening = true,
+                    openingCompleted = 0,
+                    openingTotal = uris.size,
                     errorMessage = null,
                     infoMessage = null,
                 )
@@ -75,19 +75,19 @@ class LibraryViewModel @Inject constructor(
 
             try {
                 for (uri in uris) {
-                    when (val result = importBook(uri)) {
+                    when (val result = openDocument(uri)) {
                         is Result.Success -> succeeded++
                         is Result.Error -> {
                             failed++
                             lastError = result.message
                         }
                     }
-                    _state.update { it.copy(importCompleted = it.importCompleted + 1) }
+                    _state.update { it.copy(openingCompleted = it.openingCompleted + 1) }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } finally {
-                _state.update { it.copy(isImporting = false) }
+                _state.update { it.copy(isOpening = false) }
             }
 
             _state.update {
@@ -101,8 +101,8 @@ class LibraryViewModel @Inject constructor(
                         else -> null
                     },
                     errorMessage = null,
-                    importCompleted = 0,
-                    importTotal = 0,
+                    openingCompleted = 0,
+                    openingTotal = 0,
                 )
             }
         }
