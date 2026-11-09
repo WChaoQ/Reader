@@ -83,7 +83,7 @@ object DocumentTextBuilder {
                         applyInlineSpans(result, block.spans, start, block.text.length)
                     }
                     is Block.Heading -> {
-                        if (result.isNotEmpty()) result.append("\n\n")
+                        appendBlockSeparator(result)
                         val start = result.length
                         result.append(block.text)
                         applyInlineSpans(result, block.spans, start, block.text.length)
