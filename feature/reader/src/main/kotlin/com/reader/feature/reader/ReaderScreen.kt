@@ -140,10 +140,16 @@ fun ReaderRoute(
                 // Full-viewport page size so immersion is truly edge-to-edge.
                 val pageWidth = maxWidth
                 val pageHeight = maxHeight
-                LaunchedEffect(pageWidth, pageHeight) {
+                LaunchedEffect(pageWidth, pageHeight, density.density, density.fontScale) {
                     val w = with(density) { pageWidth.roundToPx() }
                     val h = with(density) { pageHeight.roundToPx() }
-                    viewModel.onViewportSized(w, h)
+                    // StaticLayout uses physical pixels; convert the stored sp value using
+                    // the same density and user font scale as the Compose viewport.
+                    viewModel.onViewportSized(
+                        widthPx = w,
+                        heightPx = h,
+                        fontScalePxPerSp = density.density * density.fontScale,
+                    )
                 }
 
                 val total = state.pageCount.available
