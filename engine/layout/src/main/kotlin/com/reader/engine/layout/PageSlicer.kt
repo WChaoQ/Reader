@@ -103,27 +103,6 @@ object PageSlicer {
      * Returns true when [pages] are consistent with [layout] (same line/offset bounds).
      * Used to reject stale disk-cache entries without trusting them blindly.
      */
-    private fun preferParagraphBoundary(
-        layout: StaticLayout,
-        startLine: Int,
-        endLine: Int,
-        contentHeight: Int,
-    ): Int {
-        val pageLines = endLine - startLine + 1
-        if (pageLines <= MIN_LINES_PER_PAGE) return endLine
-
-        val maxEmpty = (contentHeight * MAX_PARAGRAPH_PULL_FRACTION).toInt().coerceAtLeast(1)
-        val fullBottom = layout.getLineBottom(endLine)
-        val searchFloor = startLine + MIN_LINES_PER_PAGE - 1
-        val lowerThird = maxOf(searchFloor, endLine - (pageLines / 3).coerceAtLeast(1))
-        for (candidate in endLine downTo lowerThird) {
-            if (!isParagraphEnd(layout, candidate)) continue
-            val empty = fullBottom - layout.getLineBottom(candidate)
-            if (empty <= maxEmpty) return candidate
-        }
-        return endLine
-    }
-
     fun isValid(layout: StaticLayout, pages: List<PageSlice>): Boolean {
         if (pages.isEmpty()) return false
         val lineCount = layout.lineCount
