@@ -1,7 +1,7 @@
 package com.reader.engine.format.txt
 
 object TxtChapterSplitter {
-    private val CHAPTER_REGEX = Regex(
+    val CHAPTER_REGEX = Regex(
         pattern = """^(?:第[\d一二三四五六七八九十百千零〇两]{1,12}[章节回卷部篇集]|Chapter\s+\d+|CHAPTER\s+\d+)[^\n]{0,40}$""",
         option = RegexOption.MULTILINE,
     )
