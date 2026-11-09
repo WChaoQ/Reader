@@ -28,7 +28,8 @@ class PageCache @Inject constructor(
                 val version = input.readInt()
                 if (version != VERSION) return null
                 val count = input.readInt()
-                if (count < 0 || count > 100_000) return null
+                if (count <= 0 || count > 100_000) return null
+                if (file.length() != 12L + count.toLong() * 16L) return null
                 List(count) {
                     PageSlice(
                         startLine = input.readInt(),
