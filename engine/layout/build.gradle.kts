@@ -9,6 +9,7 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:storage"))
     implementation(project(":engine:format-api"))
     implementation(libs.kotlinx.coroutines.android)
 }

@@ -6,10 +6,15 @@ import com.reader.engine.format.BookSource
 import kotlinx.coroutines.flow.Flow
 
 interface Paginator {
+    /**
+     * @param bookId when non-null, chapter page slices are read/written under
+     *   pages/<bookId>/<layoutHash>/ for reuse across sessions.
+     */
     fun paginate(
         book: BookSource,
         config: LayoutConfig,
         start: Locator,
+        bookId: String? = null,
     ): Flow<PaginationEvent>
 }
 
