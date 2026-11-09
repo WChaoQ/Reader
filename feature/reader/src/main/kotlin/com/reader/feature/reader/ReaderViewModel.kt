@@ -306,7 +306,7 @@ class ReaderViewModel @Inject constructor(
                     FixedEngine(
                         pfd = sourceRepository.openPdfDescriptor(book),
                         pageWidthPx = pageWidth,
-                        nightMode = settings.theme == "night",
+                        theme = settings.theme,
                         ioDispatcher = dispatchers.io,
                         onPageRendered = {
                             _state.update { state -> state.copy(renderRevision = state.renderRevision + 1) }
