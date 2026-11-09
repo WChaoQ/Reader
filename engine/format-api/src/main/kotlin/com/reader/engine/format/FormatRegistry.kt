@@ -23,9 +23,10 @@ class FormatRegistry @Inject constructor(
     fun handlerFor(format: BookFormat): FormatHandler? =
         handlers.singleOrNull { it.format == format }
 
-    suspend fun open(document: DocumentHandle): BookSource {
+    suspend fun open(document: DocumentHandle, expectedFormat: BookFormat? = null): BookSource {
         val magic = document.openInputStream().use { it.readNBytes(MAGIC_BYTES) }
-        val handler = detect(document.displayName, document.mimeType, magic)
+        val handler = expectedFormat?.let(::handlerFor)
+            ?: detect(document.displayName, document.mimeType, magic)
             ?: throw UnsupportedDocumentFormatException(document.displayName)
         val source = handler.open(document)
         if (source.format != handler.format) {
