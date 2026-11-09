@@ -13,14 +13,13 @@ import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
 
 /**
- * Document-order paginator with disk cache and [PageSlicer] cut heuristics.
+ * Progressive chapter-first paginator with disk cache and [PageSlicer] cut heuristics.
  */
 @Singleton
 class SimplePaginator @Inject constructor(
     private val pageCache: PageCache,
 ) : Paginator {
 
-    @Suppress("UNUSED_PARAMETER")
     override fun paginate(
         book: BookSource,
         config: LayoutConfig,
@@ -32,10 +31,10 @@ class SimplePaginator @Inject constructor(
             emit(PaginationEvent.Completed)
             return@flow
         }
-        // Keep chapter results in document order. Since global page indexes are dense integers,
-        // publishing a later chapter before an earlier one would shift every existing index
-        // when the missing chapter eventually arrives.
-        val order = buildOrder(total)
+        // Prioritize the chapter containing the saved locator, then expand outward.
+        // ReflowEngine rebuilds the global index in document order, and the reader keeps
+        // its current Locator so it can resolve the shifted integer page index as chapters arrive.
+        val order = buildOrder(start.chapter, total)
         val layoutHash = config.hash
         var done = 0
         for (chapterIndex in order) {
@@ -78,6 +77,19 @@ class SimplePaginator @Inject constructor(
         return pages
     }
 
-    private fun buildOrder(total: Int): List<Int> =
-        if (total <= 0) emptyList() else (0 until total).toList()
+    private fun buildOrder(start: Int, total: Int): List<Int> {
+        if (total <= 0) return emptyList()
+
+        val center = start.coerceIn(0, total - 1)
+        val ordered = ArrayList<Int>(total).apply { add(center) }
+        var delta = 1
+        while (ordered.size < total) {
+            val next = center + delta
+            val previous = center - delta
+            if (next < total) ordered += next
+            if (previous >= 0) ordered += previous
+            delta++
+        }
+        return ordered
+    }
 }
