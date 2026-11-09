@@ -60,7 +60,7 @@ class EpubBookSource(
         val href = spineHrefs[index]
         return try {
             val bytes = ZipSafe.readEntry(zip, href)
-            val xhtml = bytes.toString(Charsets.UTF_8)
+            val xhtml = decodeXhtml(bytes)
             val blocks = XhtmlToBlocks.parse(xhtml, href)
             val title = tocEntries.firstOrNull { it.locator.chapter == index }?.title
                 ?: href.substringAfterLast('/').substringBeforeLast('.')
@@ -92,6 +92,19 @@ class EpubBookSource(
     private fun parseRootfile(containerXml: String): String? {
         val regex = Regex("full-path\\s*=\\s*\"([^\"]+)\"", RegexOption.IGNORE_CASE)
         return regex.find(containerXml)?.groupValues?.get(1)
+    }
+
+    private fun decodeXhtml(bytes: ByteArray): String {
+        // Prefer XML declaration charset; fall back to UTF-8 with BOM handling.
+        val head = bytes.copyOfRange(0, minOf(bytes.size, 256)).toString(Charsets.ISO_8859_1)
+        val charsetName = Regex(
+            """encoding\\s*=\\s*['\"]([A-Za-z0-9_\\-]+)['\"]""",
+            RegexOption.IGNORE_CASE,
+        ).find(head)?.groupValues?.get(1)
+        val charset = runCatching {
+            if (charsetName != null) java.nio.charset.Charset.forName(charsetName) else Charsets.UTF_8
+        }.getOrDefault(Charsets.UTF_8)
+        return bytes.toString(charset).removePrefix("\uFEFF")
     }
 
     companion object {
