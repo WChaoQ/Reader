@@ -7,16 +7,19 @@ import com.reader.core.model.Locator
 import com.reader.core.model.ResourceRef
 import com.reader.core.model.TocEntry
 import com.reader.engine.format.BookSource
+import com.reader.engine.format.DocumentHandle
+import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.InputStream
 import java.util.zip.ZipFile
 import kotlinx.coroutines.CancellationException
 
 class EpubBookSource(
-    private val file: File,
+    private val document: DocumentHandle,
 ) : BookSource {
 
-    private val zip: ZipFile = ZipSafe.open(file)
+    private val descriptor: ParcelFileDescriptor = document.openFileDescriptor()
+    private val zip: ZipFile = ZipSafe.open(File("/proc/self/fd/${descriptor.fd}"))
     private val opfPath: String
     private val opfDir: String
     private val opf: OpfData
@@ -48,7 +51,7 @@ class EpubBookSource(
 
     override suspend fun metadata(): BookMetadata =
         BookMetadata(
-            title = opf.title ?: file.nameWithoutExtension,
+            title = opf.title ?: document.displayName.substringBeforeLast('.') ,
             author = opf.author,
             coverHref = coverPath,
         )
@@ -86,7 +89,7 @@ class EpubBookSource(
     }
 
     override fun close() {
-        zip.close()
+        try { zip.close() } finally { descriptor.close() }
     }
 
     private fun parseRootfile(containerXml: String): String? {
@@ -108,6 +111,6 @@ class EpubBookSource(
     }
 
     companion object {
-        fun open(file: File): EpubBookSource = EpubBookSource(file)
+        fun open(document: DocumentHandle): EpubBookSource = EpubBookSource(document)
     }
 }
