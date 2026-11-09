@@ -31,16 +31,9 @@ class OpenDocumentUseCase @Inject constructor(
     suspend operator fun invoke(uri: Uri): Result<Book> = withContext(dispatchers.io) {
         try {
             val resolver = context.contentResolver
-            try {
-                resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (security: SecurityException) {
-                // ACTION_OPEN_DOCUMENT should return a persistable read grant.
-                throw SecurityException("文件提供程序未授予持久读取权限，请从系统文件选择器重新选择", security)
-            }
-
             val existing = bookRepository.findBySourceUri(uri.toString())
             if (existing != null) {
-                // Re-check access rather than silently returning a stale shelf item.
+                persistReadGrant(uri)
                 resolver.openInputStream(uri)?.use { it.read() }
                     ?: throw IOException("Document is no longer available")
                 return@withContext Result.Success(existing)
@@ -73,6 +66,9 @@ class OpenDocumentUseCase @Inject constructor(
                 source.close()
             }
 
+            // Request durable access only after the document has passed format validation.
+            persistReadGrant(uri)
+
             val id = MessageDigest.getInstance("SHA-256")
                 .digest(uri.toString().toByteArray())
                 .take(16)
@@ -96,6 +92,17 @@ class OpenDocumentUseCase @Inject constructor(
             Result.Error(security, security.message ?: "文件读取权限已失效，请重新选择文件")
         } catch (failure: Exception) {
             Result.Error(failure, failure.message ?: "无法打开此文档")
+        }
+    }
+
+    private fun persistReadGrant(uri: Uri) {
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        } catch (security: SecurityException) {
+            throw SecurityException("文件提供程序未授予持久读取权限，请从系统文件选择器重新选择", security)
         }
     }
 }
