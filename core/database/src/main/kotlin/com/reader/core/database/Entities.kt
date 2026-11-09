@@ -20,6 +20,7 @@ data class BookEntity(
     val lastReadAt: Long?,
     val chapterCount: Int = 0,
     val state: String = "ready",
+    val sourceUri: String? = null,
 )
 
 @Entity(
