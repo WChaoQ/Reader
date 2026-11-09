@@ -157,18 +157,40 @@ class ReflowEngine(
 
     override fun pageIndexOf(locator: Locator): Int {
         if (pageIndexMap.isEmpty()) return 0
-        val pages = chapterPages[locator.chapter]
-        if (pages != null) {
-            val index = pages.indexOfFirst {
-                locator.offset >= it.startOffset && locator.offset < it.endOffset
-            }
-            if (index >= 0) {
-                val base = pageIndexMap.indexOfFirst { it.first == locator.chapter && it.second == 0 }
-                if (base >= 0) return base + index
+
+        val chapter = locator.chapter.coerceIn(0, (source.chapterCount - 1).coerceAtLeast(0))
+        val pages = chapterPages[chapter]
+        if (pages != null && pages.isNotEmpty()) {
+            val base = pageIndexMap.indexOfFirst { it.first == chapter && it.second == 0 }
+            if (base >= 0) {
+                val offset = locator.offset.coerceAtLeast(0)
+                val pageInChapter = pages.indexOfFirst { slice ->
+                    if (slice.startOffset == slice.endOffset) {
+                        offset == slice.startOffset
+                    } else {
+                        offset >= slice.startOffset && offset < slice.endOffset
+                    }
+                }
+
+                if (pageInChapter >= 0) return base + pageInChapter
+
+                // A saved locator may point exactly past the final character (EOF).
+                // Keep it on the chapter's final page instead of incorrectly jumping
+                // back to the beginning of the book.
+                if (offset >= pages.last().endOffset) return base + pages.lastIndex
+                if (offset < pages.first().startOffset) return base
             }
         }
-        val base = pageIndexMap.indexOfFirst { it.first == locator.chapter && it.second == 0 }
-        return base.coerceAtLeast(0)
+
+        // Pagination is progressive: the requested chapter may not have arrived yet.
+        // Prefer the first available page after it; otherwise use the nearest prior page.
+        val nextChapterPage = pageIndexMap.indexOfFirst { it.first > chapter }
+        if (nextChapterPage >= 0) return nextChapterPage
+
+        val previousChapterPage = pageIndexMap.indexOfLast { it.first < chapter }
+        if (previousChapterPage >= 0) return previousChapterPage
+
+        return 0
     }
 
     override fun drawPage(pageIndex: Int, canvas: Canvas, textColor: Int, backgroundColor: Int) {
