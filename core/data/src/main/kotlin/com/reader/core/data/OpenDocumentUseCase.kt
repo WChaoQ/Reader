@@ -29,6 +29,7 @@ class OpenDocumentUseCase @Inject constructor(
     private val dispatchers: ReaderDispatchers,
 ) {
     suspend operator fun invoke(uri: Uri): Result<Book> = withContext(dispatchers.io) {
+        var releaseGrantOnFailure = false
         try {
             val resolver = context.contentResolver
             val existing = bookRepository.findBySourceUri(uri.toString())
@@ -68,6 +69,7 @@ class OpenDocumentUseCase @Inject constructor(
 
             // Request durable access only after the document has passed format validation.
             persistReadGrant(uri)
+            releaseGrantOnFailure = true
 
             val id = MessageDigest.getInstance("SHA-256")
                 .digest(uri.toString().toByteArray())
@@ -85,13 +87,26 @@ class OpenDocumentUseCase @Inject constructor(
                 sourceUri = uri.toString(),
             )
             bookRepository.upsert(book, chapterCount)
+            releaseGrantOnFailure = false
             Result.Success(book)
         } catch (cancelled: CancellationException) {
+            if (releaseGrantOnFailure) releaseReadGrant(uri)
             throw cancelled
         } catch (security: SecurityException) {
+            if (releaseGrantOnFailure) releaseReadGrant(uri)
             Result.Error(security, security.message ?: "文件读取权限已失效，请重新选择文件")
         } catch (failure: Exception) {
+            if (releaseGrantOnFailure) releaseReadGrant(uri)
             Result.Error(failure, failure.message ?: "无法打开此文档")
+        }
+    }
+
+    private fun releaseReadGrant(uri: Uri) {
+        runCatching {
+            context.contentResolver.releasePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
         }
     }
 
