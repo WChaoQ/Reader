@@ -12,10 +12,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -26,7 +26,6 @@ import androidx.compose.runtime.key
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
@@ -52,11 +51,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -74,11 +70,8 @@ import kotlin.math.roundToInt
  * Continuous-position reader.
  *
  * Immersion (browseProgress = 0): current page fills the screen, no chrome.
- * Browse (browseProgress = 1): strip scaled down, neighbors visible with gap,
- * top bar + progress bar slid in.
- *
- * pagePosition is a continuous float; scale, spacing and translation are all
- * derived from (pagePosition, browseProgress). Page index is just round(pagePosition).
+ * Browse (browseProgress = 1): a horizontally scrollable strip of uniformly sized
+ * page previews appears, with the selected page initially centered.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,9 +145,6 @@ fun ReaderRoute(
                 val settledPage = state.currentPage
 
                 val browseProgress = remember { Animatable(0f) }
-                var settledPageRef by remember { mutableIntStateOf(settledPage) }
-                settledPageRef = settledPage
-
                 val progress = browseProgress.value
                 val isBrowse = progress >= 0.5f
                 val thumbnailWidth = pageWidth * 0.78f
