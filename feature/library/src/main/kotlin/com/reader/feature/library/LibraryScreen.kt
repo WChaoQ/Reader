@@ -79,7 +79,7 @@ fun LibraryRoute(
     }
 
     val picker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments(),
+        contract = ActivityResultContracts.GetMultipleContents(),
     ) { uris: List<Uri> ->
         viewModel.onEvent(LibraryEvent.ImportUris(uris))
     }
@@ -99,15 +99,7 @@ fun LibraryRoute(
             FloatingActionButton(
                 onClick = {
                     if (!state.isImporting) {
-                        picker.launch(
-                            arrayOf(
-                                "text/plain",
-                                "text/markdown",
-                                "application/epub+zip",
-                                "application/pdf",
-                                "*/*",
-                            ),
-                        )
+                        picker.launch("*/*")
                     }
                 },
                 modifier = Modifier.navigationBarsPadding(),
