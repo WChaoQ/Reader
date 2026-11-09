@@ -17,7 +17,10 @@ class EpubFormatHandler @Inject constructor() : FormatHandler {
     override val format: BookFormat = BookFormat.EPUB
 
     override fun canHandle(fileName: String, mimeType: String?, magic: ByteArray): Boolean =
-        fileName.endsWith(".epub", ignoreCase = true) || mimeType == "application/epub+zip"
+        fileName.endsWith(".epub", ignoreCase = true) ||
+            mimeType == "application/epub+zip" ||
+            (mimeType == "application/zip" && magic.size >= 2 &&
+                magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte())
 
     override suspend fun open(document: DocumentHandle): BookSource = EpubBookSource.open(document)
 }
