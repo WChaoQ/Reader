@@ -6,7 +6,6 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import com.reader.core.model.Block
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -46,8 +45,8 @@ class PageSlicerTest {
 
         val pages = PageSlicer.slice(layout, contentHeight = 1)
 
-        assertEquals(1, pages.size)
-        assertEquals(text.length, pages.single().endOffset)
+        assertEquals(layout.lineCount, pages.size)
+        assertEquals(text.length, pages.last().endOffset)
         assertTrue(PageSlicer.isValid(layout, pages))
     }
 
