@@ -39,7 +39,7 @@ class BookFileStore @Inject constructor(
         File(context.cacheDir, "thumbs/$bookId").also { it.mkdirs() }
 
     /** Copies a provider stream while calculating a stable content identity. */
-    fun copyAndHash(input: InputStream, suggestedName: String): Pair<File, String> {
+    fun copyAndHash(input: InputStream): Pair<File, String> {
         val temp = File.createTempFile("reader-import-", ".tmp", context.cacheDir)
         try {
             val digest = MessageDigest.getInstance("SHA-256")
