@@ -37,5 +37,6 @@ GitHub Actions 工作流 `Build App` 为 **手动触发**（`workflow_dispatch`�
 
 - 不声明 `INTERNET` 权限
 - 文件仅通过 SAF 的 `ACTION_OPEN_DOCUMENT` 打开
+- 书架通过系统文件选择器仅添加 TXT / EPUB / PDF / MD；不自动打开新添加的文档
 - 新增文档只保存持久化 `content://` URI，不复制源文件；原文件仍由系统文件提供程序管理
 - 最低 API 26，target / compile SDK 36
