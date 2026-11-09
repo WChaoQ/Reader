@@ -31,7 +31,10 @@ class SimplePaginator @Inject constructor(
             emit(PaginationEvent.Completed)
             return@flow
         }
-        val order = buildOrder(start.chapter, total)
+        // Keep chapter results in document order. Since global page indexes are dense integers,
+        // publishing a later chapter before an earlier one would shift every existing index
+        // when the missing chapter eventually arrives.
+        val order = buildOrder(total)
         val layoutHash = config.hash
         var done = 0
         for (chapterIndex in order) {
@@ -74,22 +77,6 @@ class SimplePaginator @Inject constructor(
         return pages
     }
 
-    private fun buildOrder(start: Int, total: Int): List<Int> {
-        if (total <= 0) return emptyList()
-
-        // Normalize once and use the normalized chapter for both directions.
-        // Using the raw saved chapter here can make the loop infinite when a
-        // document's chapter count has changed since its last reading session.
-        val center = start.coerceIn(0, total - 1)
-        val ordered = ArrayList<Int>(total).apply { add(center) }
-        var delta = 1
-        while (ordered.size < total) {
-            val next = center + delta
-            val previous = center - delta
-            if (next < total) ordered += next
-            if (previous >= 0) ordered += previous
-            delta++
-        }
-        return ordered
-    }
+    private fun buildOrder(total: Int): List<Int> =
+        if (total <= 0) emptyList() else (0 until total).toList()
 }
