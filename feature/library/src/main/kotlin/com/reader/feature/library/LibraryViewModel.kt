@@ -72,14 +72,12 @@ class LibraryViewModel @Inject constructor(
             var succeeded = 0
             var failed = 0
             var lastError: String? = null
-            var firstOpenedBookId: String? = null
 
             try {
                 for (uri in uris) {
                     when (val result = openDocument(uri)) {
                         is Result.Success -> {
                             succeeded++
-                            if (firstOpenedBookId == null) firstOpenedBookId = result.data.id
                         }
                         is Result.Error -> {
                             failed++
@@ -98,10 +96,10 @@ class LibraryViewModel @Inject constructor(
                 it.copy(
                     infoMessage = when {
                         failed > 0 && succeeded > 0 ->
-                            "打开完成：成功 $succeeded 本，失败 $failed 个。原因：${lastError ?: "未知错误"}"
+                            "添加完成：成功 $succeeded 个，跳过/失败 $failed 个。原因：${lastError ?: "未知错误"}"
                         failed > 0 ->
-                            "打开失败：$failed 个文件。原因：${lastError ?: "未知错误"}"
-                        succeeded > 0 -> "已加入书架 $succeeded 本"
+                            "未能添加：$failed 个文件。原因：${lastError ?: "未知错误"}"
+                        succeeded > 0 -> "已添加 $succeeded 个文档到书架"
                         else -> null
                     },
                     errorMessage = null,
@@ -109,7 +107,6 @@ class LibraryViewModel @Inject constructor(
                     openingTotal = 0,
                 )
             }
-            firstOpenedBookId?.let { _navigateToReader.emit(it) }
         }
     }
 }
