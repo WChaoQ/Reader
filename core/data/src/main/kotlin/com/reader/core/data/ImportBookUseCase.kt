@@ -190,7 +190,8 @@ class ImportBookUseCase @Inject constructor(
                                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                                 writeCover(bitmap, destination)
                             } catch (failure: Throwable) {
-                                bitmap.recycle()
+                                if (!bitmap.isRecycled) bitmap.recycle()
+                                destination.delete()
                                 throw failure
                             }
                         }
@@ -210,6 +211,7 @@ class ImportBookUseCase @Inject constructor(
     }
 
     private fun writeCover(bitmap: Bitmap, destination: File) {
+        var written = false
         try {
             destination.parentFile?.mkdirs()
             FileOutputStream(destination).use { output ->
@@ -218,8 +220,10 @@ class ImportBookUseCase @Inject constructor(
                 }
                 output.fd.sync()
             }
+            written = true
         } finally {
             bitmap.recycle()
+            if (!written) destination.delete()
         }
     }
 
