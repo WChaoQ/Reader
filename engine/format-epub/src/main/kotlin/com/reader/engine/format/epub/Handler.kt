@@ -8,7 +8,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
-import java.io.File
+import com.reader.engine.format.DocumentHandle
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,10 +16,10 @@ import javax.inject.Singleton
 class EpubFormatHandler @Inject constructor() : FormatHandler {
     override val format: BookFormat = BookFormat.EPUB
 
-    override fun canHandle(fileName: String, magic: ByteArray): Boolean =
-        fileName.endsWith(".epub", ignoreCase = true)
+    override fun canHandle(fileName: String, mimeType: String?, magic: ByteArray): Boolean =
+        fileName.endsWith(".epub", ignoreCase = true) || mimeType == "application/epub+zip"
 
-    override suspend fun open(file: File): BookSource = EpubBookSource.open(file)
+    override suspend fun open(document: DocumentHandle): BookSource = EpubBookSource.open(document)
 }
 
 @Module
