@@ -98,6 +98,7 @@ fun LibraryRoute(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
+                    if (state.isImporting) return@FloatingActionButton
                     picker.launch(
                         arrayOf(
                             "text/plain",
@@ -153,7 +154,21 @@ fun LibraryRoute(
                 }
             }
             if (state.isImporting) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = "正在导入 ${(state.importCompleted + 1).coerceAtMost(state.importTotal)} / ${state.importTotal}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
     }
