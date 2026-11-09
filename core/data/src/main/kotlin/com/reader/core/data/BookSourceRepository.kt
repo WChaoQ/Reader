@@ -23,7 +23,7 @@ class BookSourceRepository @Inject constructor(
 ) {
     suspend fun open(book: Book): BookSource = withContext(dispatchers.io) {
         val document = documentHandle(book)
-        val source = formatRegistry.open(document)
+        val source = formatRegistry.open(document, book.format)
         if (source.format != book.format) {
             source.close()
             error("Stored format ${book.format} does not match parsed format ${source.format}")
