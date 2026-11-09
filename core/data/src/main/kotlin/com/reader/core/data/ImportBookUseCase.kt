@@ -116,7 +116,7 @@ class ImportBookUseCase @Inject constructor(
         coverHref: String?,
     ): String? {
         val dest = fileStore.coverFile(bookId)
-        when (format) {
+        return when (format) {
             BookFormat.EPUB -> {
                 val href = coverHref ?: return null
                 source.openResource(ResourceRef(href)).use { input ->
@@ -129,7 +129,7 @@ class ImportBookUseCase @Inject constructor(
                         ?: return null
                     writeCover(bitmap, dest)
                 }
-                return dest.absolutePath
+                dest.absolutePath
             }
             BookFormat.PDF -> {
                 ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
@@ -145,7 +145,7 @@ class ImportBookUseCase @Inject constructor(
                         }
                     }
                 }
-                return dest.absolutePath
+                dest.absolutePath
             }
             BookFormat.TXT, BookFormat.MD -> null
         }
