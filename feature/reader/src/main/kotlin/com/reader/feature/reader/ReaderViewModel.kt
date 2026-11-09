@@ -298,19 +298,13 @@ class ReaderViewModel @Inject constructor(
                     return
                 }
             val settings = settingsRepository.settings.first()
-            val file = bookRepository.originalFile(bookId, book.format)
-                ?: run {
-                    _state.update { it.copy(isLoading = false, error = "文件缺失") }
-                    return
-                }
-
             val saved = startLocator ?: progressRepository.get(bookId) ?: Locator(0, 0)
             currentLocator = saved
             var toc: List<TocEntry> = emptyList()
             val eng: ReaderEngine = if (book.format == BookFormat.PDF) {
                 withContext(dispatchers.io) {
                     FixedEngine(
-                        file = file,
+                        pfd = sourceRepository.openPdfDescriptor(book),
                         pageWidthPx = pageWidth,
                         nightMode = settings.theme == "night",
                         ioDispatcher = dispatchers.io,
