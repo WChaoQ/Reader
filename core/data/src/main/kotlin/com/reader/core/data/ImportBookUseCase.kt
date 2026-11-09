@@ -71,10 +71,14 @@ class ImportBookUseCase @Inject constructor(
 
             val magic = temporaryFile.inputStream().use { it.readNBytes(MAGIC_BYTES) }
             val handler = formatRegistry.detect(displayName, magic)
-                ?: return@withContext Result.Error(
-                    IllegalArgumentException("Unsupported document format"),
-                    "不支持此文件。请选择 TXT、Markdown、EPUB 或 PDF",
-                )
+                ?: run {
+                    temp?.delete()
+                    temp = null
+                    return@withContext Result.Error(
+                        IllegalArgumentException("Unsupported document format"),
+                        "不支持此文件。请选择 TXT、Markdown、EPUB 或 PDF",
+                    )
+                }
 
             val extension = when (handler.format) {
                 BookFormat.TXT -> "txt"
