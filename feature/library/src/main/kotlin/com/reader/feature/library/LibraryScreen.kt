@@ -111,7 +111,7 @@ fun LibraryRoute(
                 },
                 modifier = Modifier.navigationBarsPadding(),
             ) {
-                Icon(Icons.Default.Add, contentDescription = "打开文档")
+                Icon(Icons.Default.Add, contentDescription = "添加文档")
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
