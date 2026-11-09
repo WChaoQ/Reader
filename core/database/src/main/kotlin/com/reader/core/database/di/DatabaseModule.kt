@@ -2,6 +2,8 @@ package com.reader.core.database.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.reader.core.database.BookDao
 import com.reader.core.database.BookmarkDao
 import com.reader.core.database.HighlightDao
@@ -18,11 +20,17 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
 
+    private val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE book ADD COLUMN sourceUri TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): ReaderDatabase =
         Room.databaseBuilder(context, ReaderDatabase::class.java, "reader.db")
-            .fallbackToDestructiveMigration(dropAllTables = true)
+            .addMigrations(MIGRATION_1_2)
             .build()
 
     @Provides
