@@ -43,7 +43,7 @@ object PageSlicer {
             endLine = keepHeadingWithBody(layout, line, endLine, lineCount, top, availableHeight)
 
             // Height safety net after heuristics that may have expanded the range.
-            while (endLine > line && layout.getLineBottom(endLine) - top > contentHeight) {
+            while (endLine > line && layout.getLineBottom(endLine) - top > availableHeight) {
                 endLine--
             }
 
