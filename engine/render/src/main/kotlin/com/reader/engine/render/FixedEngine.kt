@@ -33,7 +33,7 @@ import kotlin.math.sqrt
 class FixedEngine(
     private val pfd: ParcelFileDescriptor,
     private val pageWidthPx: Int,
-    private val nightMode: Boolean = false,
+    private val theme: String = "day",
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val onPageRendered: () -> Unit = {},
 ) : ReaderEngine {
@@ -62,6 +62,17 @@ class FixedEngine(
                 -1f, 0f, 0f, 0f, 255f,
                 0f, -1f, 0f, 0f, 255f,
                 0f, 0f, -1f, 0f, 255f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+    )
+    // Match the reader's sepia paper surface (#F5E6C8) without changing black text.
+    private val sepiaFilter = ColorMatrixColorFilter(
+        ColorMatrix(
+            floatArrayOf(
+                0.96f, 0f, 0f, 0f, 0f,
+                0f, 0.90f, 0f, 0f, 0f,
+                0f, 0f, 0.78f, 0f, 0f,
                 0f, 0f, 0f, 1f, 0f,
             ),
         ),
@@ -98,7 +109,11 @@ class FixedEngine(
             return
         }
 
-        paint.colorFilter = if (nightMode) nightFilter else null
+        paint.colorFilter = when (theme) {
+            "night" -> nightFilter
+            "sepia" -> sepiaFilter
+            else -> null
+        }
         val scale = minOf(
             canvas.width.toFloat() / bitmap.width.coerceAtLeast(1),
             canvas.height.toFloat() / bitmap.height.coerceAtLeast(1),
