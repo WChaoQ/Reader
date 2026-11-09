@@ -121,6 +121,7 @@ object PageSlicer {
             if (slice.startOffset != layout.getLineStart(slice.startLine)) return false
             if (slice.endOffset != layout.getLineEnd(slice.endLine)) return false
             if (slice.startOffset < 0 || slice.endOffset < slice.startOffset || slice.endOffset > textLength) return false
+            if (pages.size > 1 && layout.text.subSequence(slice.startOffset, slice.endOffset).isBlank()) return false
 
             expectedStartLine = slice.endLine + 1
             expectedStartOffset = slice.endOffset
