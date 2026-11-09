@@ -33,7 +33,7 @@ class BookSourceRepository @Inject constructor(
 
     suspend fun openPdfDescriptor(book: Book): ParcelFileDescriptor = withContext(dispatchers.io) {
         require(book.format.name == "PDF") { "Document is not a PDF" }
-        documentHandle(book).openFileDescriptor()
+        documentHandle(book).openSeekableFileDescriptor()
     }
 
     private suspend fun documentHandle(book: Book): DocumentHandle {
