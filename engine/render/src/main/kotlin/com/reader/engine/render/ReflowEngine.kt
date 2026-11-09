@@ -249,7 +249,7 @@ class ReflowEngine(
         canvas.clipRect(
             0f,
             top.toFloat(),
-            (config.pageWidthPx - config.paddingHorizontalPx).toFloat(),
+            layout.width.toFloat(),
             bottom.toFloat(),
         )
         layout.draw(canvas)
