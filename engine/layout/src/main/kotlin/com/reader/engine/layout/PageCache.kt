@@ -46,7 +46,7 @@ class PageCache @Inject constructor(
         val file = chapterFile(bookId, layoutHash, chapterIndex)
         runCatching {
             file.parentFile?.mkdirs()
-            val tmp = File(file.parentFile, "${file.name}.tmp")
+            val tmp = File.createTempFile("${file.name}.", ".tmp", file.parentFile)
             DataOutputStream(FileOutputStream(tmp).buffered()).use { out ->
                 out.write(MAGIC)
                 out.writeInt(VERSION)
