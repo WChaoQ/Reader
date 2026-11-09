@@ -92,12 +92,15 @@ class LibraryViewModel @Inject constructor(
 
             _state.update {
                 it.copy(
-                    infoMessage = if (succeeded > 0) "成功导入 $succeeded 本" else null,
-                    errorMessage = if (failed > 0) {
-                        "有 $failed 个文件导入失败：${lastError ?: "未知错误"}"
-                    } else {
-                        null
+                    infoMessage = when {
+                        failed > 0 && succeeded > 0 ->
+                            "导入完成：成功 $succeeded 本，失败 $failed 个。原因：${lastError ?: "未知错误"}"
+                        failed > 0 ->
+                            "导入失败：$failed 个文件。原因：${lastError ?: "未知错误"}"
+                        succeeded > 0 -> "成功导入 $succeeded 本"
+                        else -> null
                     },
+                    errorMessage = null,
                     importCompleted = 0,
                     importTotal = 0,
                 )
