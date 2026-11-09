@@ -17,7 +17,11 @@ class TxtFormatHandler @Inject constructor() : FormatHandler {
     override val format: BookFormat = BookFormat.TXT
 
     override fun canHandle(fileName: String, mimeType: String?, magic: ByteArray): Boolean {
-        if (fileName.endsWith(".txt", ignoreCase = true) || mimeType == "text/plain") return true
+        if (fileName.endsWith(".txt", ignoreCase = true)) return true
+        if (mimeType == "text/plain" &&
+            !fileName.endsWith(".md", ignoreCase = true) &&
+            !fileName.endsWith(".markdown", ignoreCase = true)
+        ) return true
         val isPdf = magic.size >= 4 &&
             magic[0] == 0x25.toByte() && magic[1] == 0x50.toByte() &&
             magic[2] == 0x44.toByte() && magic[3] == 0x46.toByte()
