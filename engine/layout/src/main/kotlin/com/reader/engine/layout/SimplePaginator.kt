@@ -54,7 +54,7 @@ class SimplePaginator @Inject constructor(
     ): List<PageSlice> {
         val contentHeight = (config.pageHeightPx - 2 * config.paddingVerticalPx).coerceAtLeast(1)
         val paint = StaticLayoutFactory.createPaint(config)
-        val text = DocumentTextBuilder.build(blocks)
+        val text = DocumentTextBuilder.build(blocks, config.paragraphSpacingPx)
         if (text.isEmpty()) {
             return listOf(PageSlice(0, 0, 0, 0))
         }
