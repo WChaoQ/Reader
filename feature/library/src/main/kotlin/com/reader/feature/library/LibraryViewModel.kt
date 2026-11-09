@@ -6,6 +6,7 @@ import com.reader.core.common.Result
 import com.reader.core.data.BookRepository
 import com.reader.core.data.ImportBookUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -55,26 +56,50 @@ class LibraryViewModel @Inject constructor(
     }
 
     private fun import(uris: List<android.net.Uri>) {
-        if (uris.isEmpty()) return
+        if (uris.isEmpty() || _state.value.isImporting) return
+
         viewModelScope.launch {
-            _state.update { it.copy(isImporting = true, errorMessage = null, infoMessage = null) }
-            var ok = 0
-            var fail = 0
-            var lastError: String? = null
-            for (uri in uris) {
-                when (val result = importBook(uri)) {
-                    is Result.Success -> ok++
-                    is Result.Error -> {
-                        fail++
-                        lastError = result.message
-                    }
-                }
-            }
             _state.update {
                 it.copy(
-                    isImporting = false,
-                    infoMessage = if (ok > 0) "已导入 $ok 本" else null,
-                    errorMessage = if (fail > 0) (lastError ?: "部分导入失败 ($fail)") else null,
+                    isImporting = true,
+                    importCompleted = 0,
+                    importTotal = uris.size,
+                    errorMessage = null,
+                    infoMessage = null,
+                )
+            }
+
+            var succeeded = 0
+            var failed = 0
+            var lastError: String? = null
+
+            try {
+                for (uri in uris) {
+                    when (val result = importBook(uri)) {
+                        is Result.Success -> succeeded++
+                        is Result.Error -> {
+                            failed++
+                            lastError = result.message
+                        }
+                    }
+                    _state.update { it.copy(importCompleted = it.importCompleted + 1) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } finally {
+                _state.update { it.copy(isImporting = false) }
+            }
+
+            _state.update {
+                it.copy(
+                    infoMessage = if (succeeded > 0) "成功导入 $succeeded 本" else null,
+                    errorMessage = if (failed > 0) {
+                        "有 $failed 个文件导入失败：${lastError ?: "未知错误"}"
+                    } else {
+                        null
+                    },
+                    importCompleted = 0,
+                    importTotal = 0,
                 )
             }
         }
