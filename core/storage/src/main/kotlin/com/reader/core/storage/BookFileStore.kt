@@ -3,8 +3,10 @@ package com.reader.core.storage
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,46 +38,65 @@ class BookFileStore @Inject constructor(
     fun thumbsCacheDir(bookId: String): File =
         File(context.cacheDir, "thumbs/$bookId").also { it.mkdirs() }
 
+    /** Copies a provider stream while calculating a stable content identity. */
     fun copyAndHash(input: InputStream, suggestedName: String): Pair<File, String> {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val temp = File(context.cacheDir, "import_${System.nanoTime()}_$suggestedName")
-        temp.outputStream().use { out ->
-            val buf = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val n = input.read(buf)
-                if (n <= 0) break
-                digest.update(buf, 0, n)
-                out.write(buf, 0, n)
+        val temp = File.createTempFile("reader-import-", ".tmp", context.cacheDir)
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            FileOutputStream(temp).use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (count == 0) continue
+                    digest.update(buffer, 0, count)
+                    output.write(buffer, 0, count)
+                }
+                output.fd.sync()
             }
+            require(temp.length() > 0L) { "The selected document is empty" }
+            val id = digest.digest().joinToString("") { byte -> "%02x".format(byte) }.take(32)
+            return temp to id
+        } catch (throwable: Throwable) {
+            temp.delete()
+            throw throwable
         }
-        val fullHex = digest.digest().joinToString("") { b -> "%02x".format(b) }
-        val bookId = fullHex.take(32)
-        return temp to bookId
     }
 
+    /** Atomically stages a validated document in app-private storage. */
     fun commitOriginal(temp: File, bookId: String, ext: String): File {
-        val dest = originalFile(bookId, ext)
-        if (dest.exists()) {
+        require(ext in SUPPORTED_EXTENSIONS) { "Unsupported file extension" }
+        val directory = bookDir(bookId)
+        val destination = File(directory, "original.$ext")
+        if (destination.isFile) {
             temp.delete()
-            return dest
+            return destination
         }
-        bookDir(bookId)
-        if (!temp.renameTo(dest)) {
-            temp.copyTo(dest, overwrite = true)
-            temp.delete()
+
+        val staged = File(directory, "original-${UUID.randomUUID()}.$ext.tmp")
+        try {
+            if (!temp.renameTo(staged)) {
+                temp.copyTo(staged, overwrite = true)
+                temp.delete()
+            }
+            check(staged.renameTo(destination)) { "Unable to finalize imported document" }
+            return destination
+        } catch (throwable: Throwable) {
+            staged.delete()
+            throw throwable
         }
-        return dest
     }
 
     fun deleteBook(bookId: String) {
-        bookDir(bookId).deleteRecursively()
+        File(booksRoot, bookId).deleteRecursively()
         File(context.cacheDir, "pages/$bookId").deleteRecursively()
         File(context.cacheDir, "thumbs/$bookId").deleteRecursively()
     }
 
     fun exists(bookId: String): Boolean =
-        originalFile(bookId, "txt").exists() ||
-            originalFile(bookId, "md").exists() ||
-            originalFile(bookId, "epub").exists() ||
-            originalFile(bookId, "pdf").exists()
+        SUPPORTED_EXTENSIONS.any { originalFile(bookId, it).isFile }
+
+    private companion object {
+        val SUPPORTED_EXTENSIONS = setOf("txt", "md", "epub", "pdf")
+    }
 }
