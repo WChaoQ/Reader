@@ -75,15 +75,21 @@ class SimplePaginator @Inject constructor(
     }
 
     private fun buildOrder(start: Int, total: Int): List<Int> {
-        val ordered = mutableListOf(start.coerceIn(0, total - 1))
+        if (total <= 0) return emptyList()
+
+        // Normalize once and use the normalized chapter for both directions.
+        // Using the raw saved chapter here can make the loop infinite when a
+        // document's chapter count has changed since its last reading session.
+        val center = start.coerceIn(0, total - 1)
+        val ordered = ArrayList<Int>(total).apply { add(center) }
         var delta = 1
         while (ordered.size < total) {
-            val next = start + delta
-            val prev = start - delta
+            val next = center + delta
+            val previous = center - delta
             if (next < total) ordered += next
-            if (prev >= 0) ordered += prev
+            if (previous >= 0) ordered += previous
             delta++
         }
-        return ordered.distinct()
+        return ordered
     }
 }
