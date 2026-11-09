@@ -9,6 +9,7 @@ import com.reader.core.common.Result
 import com.reader.core.model.Book
 import com.reader.engine.format.DocumentHandle
 import com.reader.engine.format.FormatRegistry
+import com.reader.engine.format.UnsupportedDocumentFormatException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
@@ -92,6 +93,9 @@ class OpenDocumentUseCase @Inject constructor(
         } catch (cancelled: CancellationException) {
             if (releaseGrantOnFailure) releaseReadGrant(uri)
             throw cancelled
+        } catch (unsupported: UnsupportedDocumentFormatException) {
+            if (releaseGrantOnFailure) releaseReadGrant(uri)
+            Result.Error(unsupported, "不支持此文件格式。请选择 TXT、Markdown、EPUB 或 PDF")
         } catch (security: SecurityException) {
             if (releaseGrantOnFailure) releaseReadGrant(uri)
             Result.Error(security, security.message ?: "文件读取权限已失效，请重新选择文件")
