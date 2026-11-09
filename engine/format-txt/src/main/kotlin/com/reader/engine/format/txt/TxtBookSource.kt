@@ -29,7 +29,7 @@ class TxtBookSource(
     )
 
     override suspend fun toc(): List<TocEntry> = ranges.mapIndexed { index, range ->
-        TocEntry(range.title ?: "第${index + 1}章", Locator(index, 0))
+        TocEntry(range.title ?: "第\${index + 1}章", Locator(index, 0))
     }
 
     override suspend fun loadChapter(index: Int): Chapter {
@@ -77,7 +77,7 @@ class TxtBookSource(
         }
 
         private fun indexChapters(document: DocumentHandle, charset: Charset): List<ByteChapterRange> {
-            val newline = "\\n".toByteArray(charset)
+            val newline = "\n".toByteArray(charset)
             val input = document.openInputStream().buffered(64 * 1024)
             val line = ByteArrayOutputStream()
             val tail = ArrayDeque<Byte>()
@@ -91,7 +91,7 @@ class TxtBookSource(
                     val bytes = line.toByteArray()
                     val contentLength = (bytes.size - terminatorBytes).coerceAtLeast(0)
                     val decoded = bytes.copyOf(contentLength).toString(charset)
-                        .removePrefix("\\uFEFF").trimEnd('\\r').trim()
+                        .removePrefix("\uFEFF").trimEnd('\r').trim()
                     if (decoded.isNotEmpty() && TxtChapterSplitter.CHAPTER_REGEX.matches(decoded)) {
                         matches += decoded.take(80) to lineStart
                     }
@@ -142,6 +142,7 @@ class TxtBookSource(
                 else splitRange(document, charset, range.byteStart, range.byteEnd, range.title)
             }
         }
+
         private fun splitRange(
             document: DocumentHandle,
             charset: Charset,
@@ -160,7 +161,7 @@ class TxtBookSource(
                     findNextLineBoundary(document, target, end, newline) ?: target
                 } else target
                 val label = when {
-                    title == null -> "第${part}部分"
+                    title == null -> "第\${part}部分"
                     part == 1 -> title
                     else -> "$title ($part)"
                 }
@@ -192,12 +193,6 @@ class TxtBookSource(
                 }
             }
             null
-        }
-
-        private fun endsWith(output: ByteArrayOutputStream, suffix: ByteArray): Boolean {
-            if (suffix.isEmpty() || output.size() < suffix.size) return false
-            val bytes = output.toByteArray()
-            return suffix.indices.all { bytes[bytes.size - suffix.size + it] == suffix[it] }
         }
 
         private fun skipFully(input: InputStream, count: Long) {
