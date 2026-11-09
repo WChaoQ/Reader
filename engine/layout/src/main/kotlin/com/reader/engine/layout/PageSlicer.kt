@@ -195,9 +195,7 @@ object PageSlicer {
         val text = layout.text
         val end = layout.getLineEnd(line)
         if (end >= text.length) return true
-        if (end > 0 && text[end - 1] == '\n' && end < text.length && text[end] == '\n') {
-            return true
-        }
+        if (end > 0 && text[end - 1] == '\n') return true
         if (line + 1 < layout.lineCount) {
             val ns = layout.getLineStart(line + 1)
             val ne = layout.getLineEnd(line + 1)
