@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -64,6 +65,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reader.core.ui.PageCanvas
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -208,6 +210,25 @@ fun ReaderRoute(
                                                 else -> toggleBrowse()
                                             }
                                         }
+                                    }
+                                    .pointerInput(settledPage, total) {
+                                        var dragDistance = 0f
+                                        detectDragGestures(
+                                            onDragStart = { dragDistance = 0f },
+                                            onDrag = { change, amount ->
+                                                dragDistance += amount.x
+                                                change.consume()
+                                            },
+                                            onDragEnd = {
+                                                val threshold = size.width * 0.15f
+                                                when {
+                                                    dragDistance < -threshold && settledPage < total - 1 ->
+                                                        viewModel.onEvent(ReaderEvent.JumpToPage(settledPage + 1))
+                                                    dragDistance > threshold && settledPage > 0 ->
+                                                        viewModel.onEvent(ReaderEvent.JumpToPage(settledPage - 1))
+                                                }
+                                            },
+                                        )
                                     },
                                 drawPage = { page, canvas ->
                                     viewModel.drawPage(
