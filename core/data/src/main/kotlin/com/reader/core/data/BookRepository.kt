@@ -29,6 +29,29 @@ class BookRepository @Inject constructor(
         bookDao.upsert(book.toEntity(chapterCount = chapterCount))
     }
 
+    /**
+     * Restores a missing original file without replacing the existing Room row.
+     * Updating in place preserves progress, bookmarks, and highlights linked by foreign keys.
+     */
+    suspend fun restoreMissingSource(book: Book, chapterCount: Int) = withContext(dispatchers.io) {
+        val existing = bookDao.getById(book.id)
+        if (existing == null) {
+            bookDao.upsert(book.toEntity(chapterCount = chapterCount))
+        } else {
+            bookDao.update(
+                existing.copy(
+                    title = book.title,
+                    author = book.author,
+                    format = book.format.name,
+                    fileSize = book.fileSize,
+                    coverPath = book.coverPath,
+                    chapterCount = chapterCount,
+                    state = "ready",
+                ),
+            )
+        }
+    }
+
     suspend fun updateLastRead(bookId: String, at: Long) = withContext(dispatchers.io) {
         val existing = bookDao.getById(bookId) ?: return@withContext
         bookDao.upsert(existing.copy(lastReadAt = at))
