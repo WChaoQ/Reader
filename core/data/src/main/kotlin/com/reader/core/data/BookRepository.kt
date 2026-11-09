@@ -1,10 +1,14 @@
 package com.reader.core.data
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import com.reader.core.common.ReaderDispatchers
 import com.reader.core.database.BookDao
 import com.reader.core.model.Book
 import com.reader.core.model.BookFormat
 import com.reader.core.storage.BookFileStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -14,6 +18,7 @@ import javax.inject.Singleton
 
 @Singleton
 class BookRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val bookDao: BookDao,
     private val fileStore: BookFileStore,
     private val dispatchers: ReaderDispatchers,
@@ -50,6 +55,15 @@ class BookRepository @Inject constructor(
     }
 
     suspend fun delete(bookId: String) = withContext(dispatchers.io) {
+        val existing = bookDao.getById(bookId)
+        existing?.sourceUri?.let { value ->
+            runCatching {
+                context.contentResolver.releasePersistableUriPermission(
+                    Uri.parse(value),
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+        }
         bookDao.delete(bookId)
         fileStore.deleteBook(bookId)
     }
