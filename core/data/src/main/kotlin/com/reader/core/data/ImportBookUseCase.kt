@@ -31,19 +31,19 @@ class ImportBookUseCase @Inject constructor(
     suspend operator fun invoke(uri: Uri): Result<Book> = withContext(dispatchers.io) {
         try {
             val resolver = context.contentResolver
+            try {
+                resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (security: SecurityException) {
+                // ACTION_OPEN_DOCUMENT should return a persistable read grant.
+                throw SecurityException("文件提供程序未授予持久读取权限，请从系统文件选择器重新选择", security)
+            }
+
             val existing = bookRepository.findBySourceUri(uri.toString())
             if (existing != null) {
                 // Re-check access rather than silently returning a stale shelf item.
                 resolver.openInputStream(uri)?.use { it.read() }
                     ?: throw IOException("Document is no longer available")
                 return@withContext Result.Success(existing)
-            }
-
-            try {
-                resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (security: SecurityException) {
-                // Some providers grant only transient access; this app requires a durable shelf.
-                throw SecurityException("文件提供程序未授予持久读取权限，请从系统文件选择器重新选择", security)
             }
 
             var displayName = uri.lastPathSegment?.substringAfterLast('/') ?: "未命名文档"
