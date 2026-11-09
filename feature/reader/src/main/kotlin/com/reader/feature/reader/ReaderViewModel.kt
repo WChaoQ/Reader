@@ -106,7 +106,7 @@ class ReaderViewModel @Inject constructor(
     private val openMutex = Mutex()
     private var pageWidth = 1080
     private var pageHeight = 1920
-
+    private var fontScalePxPerSp = 1f
 
     init {
         openJob = viewModelScope.launch { open() }
@@ -117,11 +117,20 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun onViewportSized(widthPx: Int, heightPx: Int) {
-        if (widthPx <= 0 || heightPx <= 0) return
-        if (widthPx == pageWidth && heightPx == pageHeight) return
+    fun onViewportSized(
+        widthPx: Int,
+        heightPx: Int,
+        fontScalePxPerSp: Float,
+    ) {
+        if (widthPx <= 0 || heightPx <= 0 || !fontScalePxPerSp.isFinite() || fontScalePxPerSp <= 0f) return
+        val changed = widthPx != pageWidth ||
+            heightPx != pageHeight ||
+            fontScalePxPerSp != this.fontScalePxPerSp
+        if (!changed) return
+
         pageWidth = widthPx
         pageHeight = heightPx
+        this.fontScalePxPerSp = fontScalePxPerSp
         if (_state.value.format != null) {
             openJob?.cancel()
             openJob = viewModelScope.launch { open(currentLocator) }
@@ -321,7 +330,7 @@ class ReaderViewModel @Inject constructor(
                 val config = LayoutConfig(
                     pageWidthPx = pageWidth,
                     pageHeightPx = pageHeight,
-                    textSizePx = settings.fontSizeSp * 3f,
+                    textSizePx = settings.fontSizeSp * fontScalePxPerSp,
                     lineSpacingMult = settings.lineSpacingMult,
                     paragraphSpacingPx = settings.paragraphSpacingPx,
                     justify = settings.justify,
