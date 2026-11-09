@@ -8,7 +8,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
-import java.io.File
+import com.reader.engine.format.DocumentHandle
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,8 +16,8 @@ import javax.inject.Singleton
 class TxtFormatHandler @Inject constructor() : FormatHandler {
     override val format: BookFormat = BookFormat.TXT
 
-    override fun canHandle(fileName: String, magic: ByteArray): Boolean {
-        if (fileName.endsWith(".txt", ignoreCase = true)) return true
+    override fun canHandle(fileName: String, mimeType: String?, magic: ByteArray): Boolean {
+        if (fileName.endsWith(".txt", ignoreCase = true) || mimeType == "text/plain") return true
         val isPdf = magic.size >= 4 &&
             magic[0] == 0x25.toByte() && magic[1] == 0x50.toByte() &&
             magic[2] == 0x44.toByte() && magic[3] == 0x46.toByte()
@@ -25,7 +25,7 @@ class TxtFormatHandler @Inject constructor() : FormatHandler {
         return !isPdf && !isZip && fileName.substringAfterLast('.', "").isEmpty()
     }
 
-    override suspend fun open(file: File): BookSource = TxtBookSource.open(file)
+    override suspend fun open(document: DocumentHandle): BookSource = TxtBookSource.open(document)
 }
 
 @Module
