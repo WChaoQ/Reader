@@ -99,7 +99,14 @@ fun LibraryRoute(
             FloatingActionButton(
                 onClick = {
                     if (!state.isOpening) {
-                        picker.launch(arrayOf("text/plain", "text/markdown", "application/epub+zip", "application/pdf", "*/*"))
+                        picker.launch(arrayOf(
+                            "text/plain",
+                            "text/markdown",
+                            "text/x-markdown",
+                            "application/epub+zip",
+                            "application/x-epub+zip",
+                            "application/pdf",
+                        ))
                     }
                 },
                 modifier = Modifier.navigationBarsPadding(),
@@ -116,7 +123,7 @@ fun LibraryRoute(
                 }
                 state.books.isEmpty() -> {
                     Text(
-                        text = "点击右下角打开 TXT / Markdown / EPUB / PDF 文档",
+                        text = "点击右下角添加 TXT / MD / EPUB / PDF 文档",
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier
                             .align(Alignment.Center)
