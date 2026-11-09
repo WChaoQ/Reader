@@ -80,6 +80,13 @@ object MarkdownParser {
                         i++
                     }
                 }
+                Regex("""^!\[([^\]]*)\]\(([^)]+)\)\s*$""").matches(line.trim()) -> {
+                    val m = Regex("""^!\[([^\]]*)\]\(([^)]+)\)\s*$""").find(line.trim())!!
+                    val alt = m.groupValues[1].ifBlank { null }
+                    val href = m.groupValues[2].trim()
+                    blocks += Block.Image(com.reader.core.model.ResourceRef(href), alt)
+                    i++
+                }
                 line.isBlank() -> i++
                 else -> {
                     val para = StringBuilder(line)
