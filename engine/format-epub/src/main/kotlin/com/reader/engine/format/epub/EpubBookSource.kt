@@ -21,6 +21,8 @@ class EpubBookSource(
     private val opfDir: String
     private val opf: OpfData
     private val spineHrefs: List<String>
+    private val tocEntries: List<TocEntry>
+    private val coverPath: String?
 
     init {
         val containerXml = ZipSafe.readEntry(zip, "META-INF/container.xml").toString(Charsets.UTF_8)
@@ -33,24 +35,25 @@ class EpubBookSource(
             if (opfDir.isEmpty()) href else ZipSafe.resolveHref(opfPath, href)
         }
         require(spineHrefs.isNotEmpty()) { "EPUB spine is empty or invalid" }
+        tocEntries = EpubTocParser.parse(zip, opf, opfPath, spineHrefs)
+        coverPath = EpubTocParser.coverHref(opf)?.let { href ->
+            if (opfDir.isEmpty()) href else ZipSafe.resolveHref(opfPath, href)
+        }
     }
 
     override val format: BookFormat = BookFormat.EPUB
     override val chapterCount: Int = spineHrefs.size
 
+    fun coverEntryPath(): String? = coverPath
+
     override suspend fun metadata(): BookMetadata =
         BookMetadata(
             title = opf.title ?: file.nameWithoutExtension,
             author = opf.author,
+            coverHref = coverPath,
         )
 
-    override suspend fun toc(): List<TocEntry> =
-        spineHrefs.mapIndexed { index, href ->
-            TocEntry(
-                title = href.substringAfterLast('/').substringBeforeLast('.'),
-                locator = Locator(chapter = index, offset = 0),
-            )
-        }
+    override suspend fun toc(): List<TocEntry> = tocEntries
 
     override suspend fun loadChapter(index: Int): Chapter {
         require(index in spineHrefs.indices) { "Chapter out of range" }
@@ -59,9 +62,11 @@ class EpubBookSource(
             val bytes = ZipSafe.readEntry(zip, href)
             val xhtml = bytes.toString(Charsets.UTF_8)
             val blocks = XhtmlToBlocks.parse(xhtml, href)
+            val title = tocEntries.firstOrNull { it.locator.chapter == index }?.title
+                ?: href.substringAfterLast('/').substringBeforeLast('.')
             Chapter(
                 index = index,
-                title = href.substringAfterLast('/').substringBeforeLast('.'),
+                title = title,
                 blocks = blocks,
             )
         } catch (cancelled: CancellationException) {
