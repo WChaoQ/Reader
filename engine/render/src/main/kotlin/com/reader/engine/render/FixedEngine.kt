@@ -21,7 +21,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
 
@@ -32,15 +31,13 @@ import kotlin.math.sqrt
  * The drawing callback only paints a cached bitmap; cache misses schedule a background render.
  */
 class FixedEngine(
-    private val file: File,
+    private val pfd: ParcelFileDescriptor,
     private val pageWidthPx: Int,
     private val nightMode: Boolean = false,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val onPageRendered: () -> Unit = {},
 ) : ReaderEngine {
 
-    private val pfd: ParcelFileDescriptor =
-        ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
     private val renderer = PdfRenderer(pfd)
     private val mutex = Mutex()
     private val renderScope = CoroutineScope(SupervisorJob() + ioDispatcher)
