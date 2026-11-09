@@ -72,11 +72,15 @@ class LibraryViewModel @Inject constructor(
             var succeeded = 0
             var failed = 0
             var lastError: String? = null
+            var firstOpenedBookId: String? = null
 
             try {
                 for (uri in uris) {
                     when (val result = openDocument(uri)) {
-                        is Result.Success -> succeeded++
+                        is Result.Success -> {
+                            succeeded++
+                            if (firstOpenedBookId == null) firstOpenedBookId = result.data.id
+                        }
                         is Result.Error -> {
                             failed++
                             lastError = result.message
@@ -105,6 +109,7 @@ class LibraryViewModel @Inject constructor(
                     openingTotal = 0,
                 )
             }
+            firstOpenedBookId?.let { _navigateToReader.emit(it) }
         }
     }
 }
