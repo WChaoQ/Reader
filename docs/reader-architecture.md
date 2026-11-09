@@ -126,7 +126,7 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 
 ### 4.1 打开并登记文档
 
-用户点击打开文档 → ACTION_OPEN_DOCUMENT 返回一个或多个 content URI → 读取显示名/MIME/大小并检测格式 → 解析器通过 ContentResolver 流或 ParcelFileDescriptor 读取原件 → 持久化只读 URI 授权 → Room 只保存 URI、元数据和阅读状态 → 打开首个成功文档并由 Flow 更新书库。
+用户点击添加文档 → ACTION_OPEN_DOCUMENT 返回一个或多个 content URI → 文件选择器按 TXT / EPUB / PDF / MD 的 MIME 类型过滤，并在登记前再次校验扩展名 → 读取显示名/MIME/大小并检测格式 → 解析器通过 ContentResolver 流或 ParcelFileDescriptor 读取原件 → 持久化只读 URI 授权 → Room 只保存 URI、元数据和阅读状态 → 所有成功文档加入书架，不自动打开；由 Room Flow 更新书库。
 
 约束：
 
@@ -302,7 +302,7 @@ Layout 模块通过 Robolectric 测试 StaticLayout 真实行布局，覆盖空�
 
 文件生命周期约束：
 
-- 使用 ACTION_OPEN_DOCUMENT / OpenMultipleDocuments，通过 ContentResolver 读取；不申请 READ_EXTERNAL_STORAGE 或 MANAGE_EXTERNAL_STORAGE 等宽泛存储权限。
+- 使用 ACTION_OPEN_DOCUMENT / OpenMultipleDocuments，通过 ContentResolver 读取；选择器仅请求 TXT、EPUB、PDF、MD 对应 MIME 类型，并在登记时按 `.txt`、`.epub`、`.pdf`、`.md` 扩展名二次校验；不申请 READ_EXTERNAL_STORAGE 或 MANAGE_EXTERNAL_STORAGE 等宽泛存储权限。
 - 新增书籍始终从原始 content URI 打开；旧版本已复制的书籍通过 sourceUri=null 的兼容路径读取原文件。
 - URI 授权失效或原文件移动/删除时保留书籍元数据，提示重新选择；删除书籍时释放 URI grant 并清理可重建缓存。
 - URI grant 不应假定会随备份恢复；备份恢复后若授权不可用，必须提示重新选择原件。
