@@ -346,6 +346,7 @@ class ReaderViewModel @Inject constructor(
                     config = config,
                     paginator = paginator,
                     scope = viewModelScope,
+                    bookId = bookId,
                     onLayoutReady = {
                         _state.update { state -> state.copy(renderRevision = state.renderRevision + 1) }
                     },
