@@ -16,7 +16,12 @@ import java.io.InputStream
 /** PDF metadata session backed by the original provider descriptor. */
 class PdfBookSource(private val document: DocumentHandle) : BookSource {
     private val descriptor: ParcelFileDescriptor = document.openFileDescriptor()
-    private val renderer = PdfRenderer(descriptor)
+    private val renderer = try {
+        PdfRenderer(descriptor)
+    } catch (failure: Throwable) {
+        descriptor.close()
+        throw failure
+    }
 
     override val format = BookFormat.PDF
     override val chapterCount get() = renderer.pageCount
