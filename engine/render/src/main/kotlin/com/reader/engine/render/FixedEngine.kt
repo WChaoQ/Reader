@@ -172,7 +172,6 @@ class FixedEngine(
         cleanupScope.launch {
             mutex.withLock {
                 runCatching { renderer.close() }
-                runCatching { pfd.close() }
             }
             cleanupScope.cancel()
         }
