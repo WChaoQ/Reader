@@ -36,6 +36,18 @@ class DocumentHandle private constructor(
         else requireNotNull(resolver).openFileDescriptor(uri, "r")
             ?: throw java.io.FileNotFoundException("Document provider returned no descriptor: $uri")
 
+    /** PdfRenderer and ZIP central-directory access require random access, not a pipe. */
+    fun openSeekableFileDescriptor(): ParcelFileDescriptor {
+        val descriptor = openFileDescriptor()
+        if (descriptor.statSize < 0L) {
+            descriptor.close()
+            throw UnsupportedOperationException(
+                "该文件提供程序不支持随机访问，请将文档下载到本地后再打开",
+            )
+        }
+        return descriptor
+    }
+
     companion object {
         fun fromUri(
             resolver: ContentResolver,
