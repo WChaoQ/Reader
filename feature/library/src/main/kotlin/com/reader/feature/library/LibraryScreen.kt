@@ -98,16 +98,17 @@ fun LibraryRoute(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    if (state.isImporting) return@FloatingActionButton
-                    picker.launch(
-                        arrayOf(
-                            "text/plain",
-                            "text/markdown",
-                            "application/epub+zip",
-                            "application/pdf",
-                            "*/*",
-                        ),
-                    )
+                    if (!state.isImporting) {
+                        picker.launch(
+                            arrayOf(
+                                "text/plain",
+                                "text/markdown",
+                                "application/epub+zip",
+                                "application/pdf",
+                                "*/*",
+                            ),
+                        )
+                    }
                 },
                 modifier = Modifier.navigationBarsPadding(),
             ) {
