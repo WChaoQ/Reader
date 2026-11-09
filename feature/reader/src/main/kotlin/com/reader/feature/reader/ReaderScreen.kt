@@ -103,11 +103,19 @@ fun ReaderRoute(
         }
     }
 
-    val pageBackground = when (state.theme) {
-        "night" -> Color(0xFF000000)
-        "sepia" -> Color(0xFFF5EBD5)
-        else -> Color(0xFFFFFFFF)
+    // The page surface and the engine canvas use the same opaque colors.
+    // Theme-to-render-style mapping belongs to the UI, not the ViewModel.
+    val textColorArgb = when (state.theme) {
+        "night" -> android.graphics.Color.rgb(224, 224, 224)
+        "sepia" -> android.graphics.Color.rgb(91, 70, 54)
+        else -> android.graphics.Color.rgb(26, 26, 26)
     }
+    val backgroundColorArgb = when (state.theme) {
+        "night" -> android.graphics.Color.rgb(18, 18, 18)
+        "sepia" -> android.graphics.Color.rgb(245, 230, 200)
+        else -> android.graphics.Color.rgb(250, 250, 250)
+    }
+    val pageBackground = Color(backgroundColorArgb)
     val stageBackground = when (state.theme) {
         "night" -> Color(0xFF121218)
         "sepia" -> Color(0xFFE8DDC5)
@@ -345,7 +353,14 @@ fun ReaderRoute(
                                         clip = progress > 0.01f
                                     }
                                     .zIndex(10f - abs(relative)),
-                                drawPage = viewModel::drawPage,
+                                drawPage = { page, canvas ->
+                                    viewModel.drawPage(
+                                        pageIndex = page,
+                                        canvas = canvas,
+                                        textColor = textColorArgb,
+                                        backgroundColor = backgroundColorArgb,
+                                    )
+                                },
                             )
                         }
                     }
