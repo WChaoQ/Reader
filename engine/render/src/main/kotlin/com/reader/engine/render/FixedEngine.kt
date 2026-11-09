@@ -38,7 +38,12 @@ class FixedEngine(
     private val onPageRendered: () -> Unit = {},
 ) : ReaderEngine {
 
-    private val renderer = PdfRenderer(pfd)
+    private val renderer = try {
+        PdfRenderer(pfd)
+    } catch (failure: Throwable) {
+        pfd.close()
+        throw failure
+    }
     private val mutex = Mutex()
     private val renderScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
