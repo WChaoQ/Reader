@@ -239,6 +239,41 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 - 缓存有容量上限，并区分可重建缓存和用户数据。
 - 解析器必须处理取消、空文件、超大文件和损坏输入。
 
+## 6.1 重排文本分页与渲染一致性
+
+重排文本采用单一排版结果作为分页和绘制的事实来源：
+
+1. `DocumentTextBuilder` 将结构化 Block 转换为带 Span 的文本，并应用段落间距。
+2. `StaticLayoutFactory` 根据同一份文本、TextPaint 和 LayoutConfig 创建 StaticLayout。
+3. `PageSlicer` 仅根据 StaticLayout 的行边界切分 PageSlice；页切片同时保存行范围和字符偏移。
+4. Render 使用相同的 DocumentTextBuilder 参数和 StaticLayoutFactory，按 PageSlice 的行范围裁剪绘制。
+5. 页缓存必须同时校验行范围、字符偏移和完整覆盖关系；布局规则变化时递增算法版本，使旧缓存失效。
+
+分页不允许在 Compose Text 与 StaticLayout 之间分别测量同一段正文，否则换行差异会造成分页和绘制错位。Compose 负责阅读界面、手势、动画和状态；StaticLayout 负责正文测量与排版。
+
+### 分页不变量
+
+- 章节和页面索引均从 0 开始。
+- PageSlice 的 endLine 为包含式行索引；startOffset/endOffset 与 StaticLayout 的 getLineStart/getLineEnd 对应。
+- 同一章节内的切片必须连续、无重叠、无遗漏，并完整覆盖正文。
+- 除整章内容为空白的特殊情况外，不产生只有空白内容的独立页面。
+- 每次分页循环至少消费一行；即使单行高度超过可用页高，也必须产生一个可前进的切片。
+- 全书全局页索引按章节顺序构建。分页结果不得先发布后续章节再补入前置章节，否则已发布的全局页码会发生漂移。
+- 页码缓存只保存可重建的切片索引，不保存正文或 StaticLayout 对象。
+
+### 分页质量策略
+
+- 尽可能填满页面，同时优先选择段落边界。
+- 避免段落末行孤立在下一页顶部，以及章节末尾只剩一行。
+- 对短标题行尽量与后续正文保持在同一页。
+- 空白行归并到相邻内容页，避免生成无内容页面。
+- 页切片缓存读取后必须重新校验；损坏、截断或不连续的数据一律重新分页。
+- LayoutConfig 的字号、行距、段落间距、内容尺寸、边距和分页算法版本均参与缓存指纹。
+
+### 测试要求
+
+Layout 模块通过 Robolectric 测试 StaticLayout 真实行布局，覆盖空文档、超长行、段落边界、连续空行、段落间距和 PageSlice 连续性。手动 Debug 构建先执行 format-api 与 layout 单元测试，再执行 APK 构建。
+
 ## 7. UI 状态与导航
 
 每个页面使用 ViewModel 作为状态持有者，向 Compose 暴露不可变 UI State，并接收明确的 UI Action。
