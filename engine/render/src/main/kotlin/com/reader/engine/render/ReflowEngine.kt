@@ -191,7 +191,7 @@ class ReflowEngine(
 
         // Pagination is progressive: the requested chapter may not have arrived yet.
         // Prefer the first available page after it; otherwise use the nearest prior page.
-        val nextChapterPage = pageIndexSnapshot.indexOfFirst { it.first > chapter }
+        val nextChapterPage = index.indexOfFirst { it.first > chapter }
         if (nextChapterPage >= 0) return nextChapterPage
 
         val previousChapterPage = index.indexOfLast { it.first < chapter }
