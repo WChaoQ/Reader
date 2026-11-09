@@ -6,6 +6,8 @@ data class LibraryUiState(
     val books: List<Book> = emptyList(),
     val isLoading: Boolean = true,
     val isImporting: Boolean = false,
+    val importCompleted: Int = 0,
+    val importTotal: Int = 0,
     val errorMessage: String? = null,
     val infoMessage: String? = null,
 )
