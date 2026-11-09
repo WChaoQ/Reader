@@ -16,9 +16,19 @@ object ZipSafe {
         require(entry.size <= MAX_ENTRY_BYTES || entry.size == -1L) {
             "Entry too large: ${entry.name}"
         }
-        return zip.getInputStream(entry).use { it.readBytes().also { bytes ->
-            require(bytes.size <= MAX_ENTRY_BYTES) { "Entry too large after read" }
-        } }
+        return zip.getInputStream(entry).use { input ->
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(16 * 1024)
+            var total = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count
+                require(total <= MAX_ENTRY_BYTES) { "Entry too large after read" }
+                output.write(buffer, 0, count)
+            }
+            output.toByteArray()
+        }
     }
 
     fun openStream(zip: ZipFile, name: String): InputStream {
