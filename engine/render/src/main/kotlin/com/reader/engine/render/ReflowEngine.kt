@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.coroutineContext
 
 class ReflowEngine(
     private val source: BookSource,
@@ -45,6 +47,8 @@ class ReflowEngine(
     private val chapterPageCounts = ConcurrentHashMap<Int, Int>()
     private val chapterPages = ConcurrentHashMap<Int, List<PageSlice>>()
     private val layouts = LruCache<Int, ChapterLayout>(3)
+    private val layoutLock = Any()
+    private val generation = AtomicLong(0)
     private val layoutJobs = ConcurrentHashMap<Int, Job>()
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -52,20 +56,27 @@ class ReflowEngine(
     @Volatile private var closed = false
 
     fun start(start: Locator = Locator(0, 0)) {
+        if (closed) return
+        val runGeneration = generation.incrementAndGet()
         paginateJob?.cancel()
+        layoutJobs.values.forEach { it.cancel() }
+        layoutJobs.clear()
         pageIndexSnapshot = emptyList()
         chapterPageCounts.clear()
-        layouts.evictAll()
+        chapterPages.clear()
+        synchronized(layoutLock) { layouts.evictAll() }
         _ready.value = false
         _pageCount.value = PageCountInfo(estimated = source.chapterCount.coerceAtLeast(1), available = 0)
 
         paginateJob = scope.launch {
             paginator.paginate(source, config, start, bookId).collect { event ->
+                if (closed || generation.get() != runGeneration) return@collect
                 when (event) {
                     is PaginationEvent.ChapterReady -> {
                         val chapter = event.chapter
                         val layout = buildChapterLayout(chapter, event.pages)
-                        layouts.put(chapter.index, layout)
+                        if (closed || generation.get() != runGeneration) return@collect
+                        putLayout(chapter.index, layout)
                         chapterPages[chapter.index] = event.pages
                         chapterPageCounts[chapter.index] = event.pages.size.coerceAtLeast(1)
                         rebuildPageIndex()
@@ -102,7 +113,9 @@ class ReflowEngine(
         pageIndexSnapshot = rebuilt
         if (rebuilt.isNotEmpty()) {
             val exact = if (chapterPageCounts.size == source.chapterCount) rebuilt.size else null
-            _pageCount.value = PageCountInfo(exact = exact, estimated = rebuilt.size, available = rebuilt.size)
+            val average = chapterPageCounts.values.average().let { if (it.isNaN()) 1.0 else it }
+            val estimated = (average * source.chapterCount).toInt().coerceAtLeast(rebuilt.size)
+            _pageCount.value = PageCountInfo(exact = exact, estimated = exact ?: estimated, available = rebuilt.size)
         }
     }
 
@@ -124,28 +137,37 @@ class ReflowEngine(
     }
 
     private fun ensureLayout(chapter: Int): ChapterLayout? {
-        val cached = layouts.get(chapter)
+        val cached = synchronized(layoutLock) { layouts.get(chapter) }
         if (cached == null) requestLayout(chapter)
         return cached
     }
 
     private fun requestLayout(chapter: Int) {
         if (closed || layoutJobs.containsKey(chapter)) return
+        val requestedGeneration = generation.get()
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val pages = chapterPages[chapter] ?: return@launch
                 val document = withContext(Dispatchers.IO) { source.loadChapter(chapter) }
                 val layout = buildChapterLayout(document, pages)
-                if (!closed) {
-                    layouts.put(chapter, layout)
+                if (!closed && generation.get() == requestedGeneration) {
+                    putLayout(chapter, layout)
                     onLayoutReady()
                 }
             } finally {
-                layoutJobs.remove(chapter)
+                coroutineContext[Job]?.let { layoutJobs.remove(chapter, it) }
             }
         }
         val existing = layoutJobs.putIfAbsent(chapter, job)
-        if (existing == null) job.start() else job.cancel()
+        if (existing == null && !closed && generation.get() == requestedGeneration) job.start()
+        else {
+            if (existing == null) layoutJobs.remove(chapter, job)
+            job.cancel()
+        }
+    }
+
+    private fun putLayout(chapter: Int, layout: ChapterLayout) {
+        synchronized(layoutLock) { layouts.put(chapter, layout) }
     }
 
     override fun locatorOf(pageIndex: Int): Locator {
@@ -253,7 +275,7 @@ class ReflowEngine(
         activeJobs.addAll(layoutJobs.values)
         activeJobs.forEach { it.cancel() }
         layoutJobs.clear()
-        layouts.evictAll()
+        synchronized(layoutLock) { layouts.evictAll() }
         chapterPages.clear()
         cleanupScope.launch {
             activeJobs.joinAll()
