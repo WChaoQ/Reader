@@ -40,7 +40,8 @@ class ReflowEngine(
     private val _ready = MutableStateFlow(false)
     override val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
-    private val pageIndexMap = mutableListOf<Pair<Int, Int>>()
+    /** Immutable index snapshot, atomically replaced after each complete rebuild. */
+    @Volatile private var pageIndexSnapshot: List<Pair<Int, Int>> = emptyList()
     private val chapterPageCounts = ConcurrentHashMap<Int, Int>()
     private val chapterPages = ConcurrentHashMap<Int, List<PageSlice>>()
     private val layouts = LruCache<Int, ChapterLayout>(3)
@@ -52,7 +53,7 @@ class ReflowEngine(
 
     fun start(start: Locator = Locator(0, 0)) {
         paginateJob?.cancel()
-        pageIndexMap.clear()
+        pageIndexSnapshot = emptyList()
         chapterPageCounts.clear()
         layouts.evictAll()
         _ready.value = false
@@ -77,11 +78,13 @@ class ReflowEngine(
                             if (it.isNaN()) 1.0 else it
                         }
                         val estimated = (avg * source.chapterCount).toInt().coerceAtLeast(1)
-                        _pageCount.value = PageCountInfo(exact = null, estimated = maxOf(estimated, pageIndexMap.size), available = pageIndexMap.size)
+                        val available = pageIndexSnapshot.size
+                        _pageCount.value = PageCountInfo(exact = null, estimated = maxOf(estimated, available), available = available)
                     }
                     PaginationEvent.Completed -> {
                         rebuildPageIndex()
-                        _pageCount.value = PageCountInfo(exact = pageIndexMap.size, available = pageIndexMap.size)
+                        val available = pageIndexSnapshot.size
+                        _pageCount.value = PageCountInfo(exact = available, available = available)
                         _ready.value = true
                     }
                 }
@@ -90,14 +93,16 @@ class ReflowEngine(
     }
 
     private fun rebuildPageIndex() {
-        pageIndexMap.clear()
-        for (chapter in 0 until source.chapterCount) {
-            val count = chapterPageCounts[chapter] ?: continue
-            for (page in 0 until count) pageIndexMap += chapter to page
+        val rebuilt = buildList {
+            for (chapter in 0 until source.chapterCount) {
+                val count = chapterPageCounts[chapter] ?: continue
+                repeat(count) { page -> add(chapter to page) }
+            }
         }
-        if (pageIndexMap.isNotEmpty()) {
-            val exact = if (chapterPageCounts.size == source.chapterCount) pageIndexMap.size else null
-            _pageCount.value = PageCountInfo(exact = exact, estimated = pageIndexMap.size, available = pageIndexMap.size)
+        pageIndexSnapshot = rebuilt
+        if (rebuilt.isNotEmpty()) {
+            val exact = if (chapterPageCounts.size == source.chapterCount) rebuilt.size else null
+            _pageCount.value = PageCountInfo(exact = exact, estimated = rebuilt.size, available = rebuilt.size)
         }
     }
 
@@ -144,10 +149,11 @@ class ReflowEngine(
     }
 
     override fun locatorOf(pageIndex: Int): Locator {
-        if (pageIndexMap.isEmpty() || pageIndex !in pageIndexMap.indices) return Locator(0, 0)
-        val (chapter, pageInChapter) = pageIndexMap[pageIndex]
+        val index = pageIndexSnapshot
+        if (pageIndex !in index.indices) return Locator(0, 0)
+        val (chapter, pageInChapter) = index[pageIndex]
         val slice = chapterPages[chapter]?.getOrNull(pageInChapter)
-        val totalPages = pageIndexMap.size.coerceAtLeast(1)
+        val totalPages = index.size.coerceAtLeast(1)
         return Locator(
             chapter = chapter,
             offset = slice?.startOffset ?: 0,
@@ -156,12 +162,13 @@ class ReflowEngine(
     }
 
     override fun pageIndexOf(locator: Locator): Int {
-        if (pageIndexMap.isEmpty()) return 0
+        val index = pageIndexSnapshot
+        if (index.isEmpty()) return 0
 
         val chapter = locator.chapter.coerceIn(0, (source.chapterCount - 1).coerceAtLeast(0))
         val pages = chapterPages[chapter]
         if (pages != null && pages.isNotEmpty()) {
-            val base = pageIndexMap.indexOfFirst { it.first == chapter && it.second == 0 }
+            val base = index.indexOfFirst { it.first == chapter && it.second == 0 }
             if (base >= 0) {
                 val offset = locator.offset.coerceAtLeast(0)
                 val pageInChapter = pages.indexOfFirst { slice ->
@@ -184,10 +191,10 @@ class ReflowEngine(
 
         // Pagination is progressive: the requested chapter may not have arrived yet.
         // Prefer the first available page after it; otherwise use the nearest prior page.
-        val nextChapterPage = pageIndexMap.indexOfFirst { it.first > chapter }
+        val nextChapterPage = pageIndexSnapshot.indexOfFirst { it.first > chapter }
         if (nextChapterPage >= 0) return nextChapterPage
 
-        val previousChapterPage = pageIndexMap.indexOfLast { it.first < chapter }
+        val previousChapterPage = index.indexOfLast { it.first < chapter }
         if (previousChapterPage >= 0) return previousChapterPage
 
         return 0
@@ -195,8 +202,9 @@ class ReflowEngine(
 
     override fun drawPage(pageIndex: Int, canvas: Canvas, textColor: Int, backgroundColor: Int) {
         canvas.drawColor(backgroundColor)
-        if (pageIndexMap.isEmpty() || pageIndex !in pageIndexMap.indices) return
-        val (chapter, pageInChapter) = pageIndexMap[pageIndex]
+        val index = pageIndexSnapshot
+        if (pageIndex !in index.indices) return
+        val (chapter, pageInChapter) = index[pageIndex]
         val chapterLayout = ensureLayout(chapter) ?: return
         val slice = chapterLayout.pages.getOrNull(pageInChapter) ?: return
         val layout = chapterLayout.layout
@@ -227,8 +235,9 @@ class ReflowEngine(
     }
 
     override fun pageText(pageIndex: Int): String {
-        if (pageIndexMap.isEmpty() || pageIndex !in pageIndexMap.indices) return ""
-        val (chapter, pageInChapter) = pageIndexMap[pageIndex]
+        val index = pageIndexSnapshot
+        if (pageIndex !in index.indices) return ""
+        val (chapter, pageInChapter) = index[pageIndex]
         val chapterLayout = ensureLayout(chapter) ?: return ""
         val slice = chapterLayout.pages.getOrNull(pageInChapter) ?: return ""
         val start = slice.startOffset.coerceIn(0, chapterLayout.plainText.length)
