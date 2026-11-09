@@ -70,11 +70,15 @@ class SimplePaginator @Inject constructor() : Paginator {
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(0f, config.lineSpacingMult)
             .setIncludePad(false)
+            .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)
+            .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
             .build()
 
         val pages = mutableListOf<PageSlice>()
         var line = 0
         val lineCount = layout.lineCount
+        // Architecture §7.2: keep at least 2 lines on a page when possible.
+        val minLinesPerPage = 2
         while (line < lineCount) {
             val top = layout.getLineTop(line)
             var endLine = line
@@ -85,6 +89,12 @@ class SimplePaginator @Inject constructor() : Paginator {
             }
             if (endLine == line && endLine + 1 < lineCount) {
                 endLine = line + 1
+            }
+            // Widow control: if only one line would remain after this page, pull it back
+            // unless the current page would drop below minLinesPerPage.
+            val remaining = lineCount - (endLine + 1)
+            if (remaining == 1 && (endLine - line + 1) > minLinesPerPage) {
+                endLine--
             }
             val startOffset = layout.getLineStart(line)
             val endOffset = layout.getLineEnd(endLine)
@@ -98,5 +108,4 @@ class SimplePaginator @Inject constructor() : Paginator {
         }
         return pages.ifEmpty { listOf(PageSlice(0, 0, 0, text.length)) }
     }
-
 }
