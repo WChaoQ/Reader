@@ -19,7 +19,12 @@ class EpubBookSource(
 ) : BookSource {
 
     private val descriptor: ParcelFileDescriptor = document.openFileDescriptor()
-    private val zip: ZipFile = ZipSafe.open(File("/proc/self/fd/${descriptor.fd}"))
+    private val zip: ZipFile = try {
+        ZipSafe.open(File("/proc/self/fd/${descriptor.fd}"))
+    } catch (failure: Throwable) {
+        descriptor.close()
+        throw failure
+    }
     private val opfPath: String
     private val opfDir: String
     private val opf: OpfData
