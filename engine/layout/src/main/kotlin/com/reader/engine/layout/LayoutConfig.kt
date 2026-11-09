@@ -24,7 +24,7 @@ data class LayoutConfig(
 
     companion object {
         /** Page-cut + text-builder algorithm version. */
-        const val ALGORITHM_VERSION = 4
+        const val ALGORITHM_VERSION = 5
     }
 }
 
