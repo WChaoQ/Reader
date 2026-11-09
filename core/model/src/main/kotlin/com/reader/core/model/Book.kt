@@ -13,6 +13,7 @@ data class Book(
     val coverPath: String?,
     val importedAt: Long,
     val lastReadAt: Long?,
+    val sourceUri: String? = null,
 )
 
 /** Unified locator. Reflow formats use chapter + offset; PDF uses chapter=page, offset=0 */
