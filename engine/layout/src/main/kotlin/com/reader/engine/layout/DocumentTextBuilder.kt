@@ -100,7 +100,7 @@ object DocumentTextBuilder {
                         }
                     }
                     is Block.Quote -> {
-                        if (result.isNotEmpty()) result.append("\n\n")
+                        appendBlockSeparator(result)
                         val start = result.length
                         result.append(render(block.children))
                         if (result.length > start) {
@@ -118,7 +118,7 @@ object DocumentTextBuilder {
                         }
                     }
                     is Block.CodeBlock -> {
-                        if (result.isNotEmpty()) result.append("\n\n")
+                        appendBlockSeparator(result)
                         val start = result.length
                         result.append(block.text)
                         if (result.length > start) {
@@ -127,7 +127,7 @@ object DocumentTextBuilder {
                         }
                     }
                     is Block.Image -> {
-                        if (result.isNotEmpty()) result.append("\n\n")
+                        appendBlockSeparator(result)
                         val alt = block.alt?.takeIf { it.isNotBlank() } ?: "image"
                         val start = result.length
                         result.append("[ $alt ]")
@@ -136,7 +136,7 @@ object DocumentTextBuilder {
                         result.setSpan(RelativeSizeSpan(0.92f), start, result.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
                     Block.Divider -> {
-                        if (result.isNotEmpty()) result.append("\n\n")
+                        appendBlockSeparator(result)
                         result.append("———")
                     }
                 }
