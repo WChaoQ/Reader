@@ -110,7 +110,7 @@ Model 应保持纯 Kotlin。Room Entity 不应直接成为 UI 模型；Storage �
 
 | 模块 | 职责 |
 |---|---|
-| :feature:library | 书库列表、空状态、导入入口、书籍操作和书库 UI 状态。 |
+| :feature:library | 书库列表、空状态、打开文档入口、书籍操作和书库 UI 状态。 |
 | :feature:reader | 阅读页面、目录/进度/翻页交互、阅读 UI 状态和引擎接入。 |
 | :feature:settings | 阅读偏好设置 UI、状态展示和修改入口。 |
 
@@ -124,7 +124,7 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 
 ## 4. 核心数据流
 
-### 4.1 导入
+### 4.1 打开并登记文档
 
 用户点击打开文档 → ACTION_OPEN_DOCUMENT 返回一个或多个 content URI → 读取显示名/MIME/大小并检测格式 → 解析器通过 ContentResolver 流或 ParcelFileDescriptor 读取原件 → 持久化只读 URI 授权 → Room 只保存 URI、元数据和阅读状态 → 打开首个成功文档并由 Flow 更新书库。
 
@@ -373,7 +373,7 @@ Layout 模块通过 Robolectric 测试 StaticLayout 真实行布局，覆盖空�
 2. 新建 :engine:format-<name> 模块，实现解析、资源管理和 Locator 映射。
 3. 编写纯解析单元测试和真实文件样本测试。
 4. 在应用装配层注册格式实现。
-5. 必要时扩展导入识别和元数据流程，不把格式分支散落到 Feature。
+5. 必要时扩展格式识别和元数据流程，不把格式分支散落到 Feature。
 6. 在 Reader UI 中复用统一内容和定位模型。
 7. 增加大文件性能测试和资源释放测试。
 8. 更新本文档和格式支持说明。
