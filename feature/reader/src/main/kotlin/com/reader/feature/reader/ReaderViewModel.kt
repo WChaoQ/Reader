@@ -131,10 +131,12 @@ class ReaderViewModel @Inject constructor(
         pageWidth = widthPx
         pageHeight = heightPx
         this.fontScalePxPerSp = fontScalePxPerSp
-        if (_state.value.format != null) {
-            openJob?.cancel()
-            openJob = viewModelScope.launch { open(currentLocator) }
-        }
+        // The first open may still be in progress when Compose reports its real
+        // viewport. Restart it as well; otherwise the engine can retain the fallback
+        // 1080×1920 / 1× density configuration. Preserve a saved locator when available.
+        val restartLocator = currentLocator.takeIf { _state.value.format != null }
+        openJob?.cancel()
+        openJob = viewModelScope.launch { open(restartLocator) }
     }
 
     fun onEvent(event: ReaderEvent) {
