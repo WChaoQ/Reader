@@ -9,12 +9,14 @@ data class OpfData(
     val author: String?,
     val manifest: Map<String, ManifestItem>,
     val spine: List<String>,
+    val coverId: String? = null,
 )
 
 data class ManifestItem(
     val id: String,
     val href: String,
     val mediaType: String,
+    val properties: List<String> = emptyList(),
 )
 
 object OpfParser {
@@ -25,6 +27,7 @@ object OpfParser {
 
         var title: String? = null
         var author: String? = null
+        var coverId: String? = null
         val manifest = linkedMapOf<String, ManifestItem>()
         val spine = mutableListOf<String>()
 
@@ -37,7 +40,7 @@ object OpfParser {
             when (event) {
                 XmlPullParser.START_TAG -> {
                     textBuf = StringBuilder()
-                    when (parser.name.lowercase()) {
+                    when (parser.name.lowercase().substringAfter(':')) {
                         "manifest" -> inManifest = true
                         "spine" -> inSpine = true
                         "item" -> if (inManifest) {
@@ -46,19 +49,30 @@ object OpfParser {
                             val mt = parser.getAttributeValue(null, "media-type")
                                 ?: parser.getAttributeValue(null, "mediaType")
                                 ?: ""
+                            val props = (parser.getAttributeValue(null, "properties") ?: "")
+                                .split(Regex("\\s+"))
+                                .filter { it.isNotBlank() }
                             if (id.isNotEmpty() && href.isNotEmpty()) {
-                                manifest[id] = ManifestItem(id, href, mt)
+                                manifest[id] = ManifestItem(id, href, mt, props)
                             }
                         }
                         "itemref" -> if (inSpine) {
                             val idref = parser.getAttributeValue(null, "idref")
                             if (!idref.isNullOrEmpty()) spine += idref
                         }
+                        "meta" -> {
+                            val name = parser.getAttributeValue(null, "name")
+                                ?: parser.getAttributeValue(null, "property")
+                            val content = parser.getAttributeValue(null, "content")
+                            if (name.equals("cover", ignoreCase = true) && !content.isNullOrBlank()) {
+                                coverId = content
+                            }
+                        }
                     }
                 }
                 XmlPullParser.TEXT -> textBuf.append(parser.text)
                 XmlPullParser.END_TAG -> {
-                    when (parser.name.lowercase()) {
+                    when (parser.name.lowercase().substringAfter(':')) {
                         "manifest" -> inManifest = false
                         "spine" -> inSpine = false
                         "title" -> if (title == null) {
@@ -74,6 +88,6 @@ object OpfParser {
             }
             event = parser.next()
         }
-        return OpfData(title, author, manifest, spine)
+        return OpfData(title, author, manifest, spine, coverId)
     }
 }
