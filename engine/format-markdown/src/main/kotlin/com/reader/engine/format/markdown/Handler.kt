@@ -8,7 +8,7 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
-import java.io.File
+import com.reader.engine.format.DocumentHandle
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,11 +16,11 @@ import javax.inject.Singleton
 class MarkdownFormatHandler @Inject constructor() : FormatHandler {
     override val format: BookFormat = BookFormat.MD
 
-    override fun canHandle(fileName: String, magic: ByteArray): Boolean =
+    override fun canHandle(fileName: String, mimeType: String?, magic: ByteArray): Boolean =
         fileName.endsWith(".md", ignoreCase = true) ||
-            fileName.endsWith(".markdown", ignoreCase = true)
+            fileName.endsWith(".markdown", ignoreCase = true) || mimeType == "text/markdown" || mimeType == "text/x-markdown"
 
-    override suspend fun open(file: File): BookSource = MarkdownBookSource.open(file)
+    override suspend fun open(document: DocumentHandle): BookSource = MarkdownBookSource.open(document)
 }
 
 @Module
