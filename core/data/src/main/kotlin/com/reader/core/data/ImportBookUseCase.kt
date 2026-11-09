@@ -45,6 +45,7 @@ class ImportBookUseCase @Inject constructor(
                 ?.take(240)
                 ?.takeIf { it.isNotBlank() }
                 ?: "未命名文档"
+            val fileName = normalizeFileName(displayName, context.contentResolver.getType(uri))
 
             val input = context.contentResolver.openInputStream(uri)
                 ?: return@withContext Result.Error(
@@ -70,7 +71,7 @@ class ImportBookUseCase @Inject constructor(
             }
 
             val magic = temporaryFile.inputStream().use { it.readNBytes(MAGIC_BYTES) }
-            val handler = formatRegistry.detect(displayName, magic)
+            val handler = formatRegistry.detect(fileName, magic)
                 ?: run {
                     temp?.delete()
                     temp = null
@@ -111,7 +112,7 @@ class ImportBookUseCase @Inject constructor(
                     null
                 }
 
-                val fallbackTitle = displayName.substringBeforeLast('.', displayName)
+                val fallbackTitle = fileName.substringBeforeLast('.', fileName)
                     .ifBlank { "未命名文档" }
                 val book = Book(
                     id = bookId,
@@ -228,6 +229,26 @@ class ImportBookUseCase @Inject constructor(
             val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
             if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
         }
+    }
+
+    /**
+     * Some document providers expose a generic name such as "document" or "download" while
+     * still returning a reliable MIME type. Add a supported suffix so extension-based handlers
+     * (EPUB and Markdown) can identify those documents consistently.
+     */
+    private fun normalizeFileName(name: String, mimeType: String?): String {
+        val extension = name.substringAfterLast('.', "").lowercase()
+        if (extension in setOf("txt", "md", "markdown", "epub", "pdf")) return name
+
+        val mimeExtension = when (mimeType?.substringBefore(';')?.trim()?.lowercase()) {
+            "application/epub+zip" -> "epub"
+            "application/pdf" -> "pdf"
+            "text/markdown", "text/x-markdown" -> "md"
+            "text/plain" -> "txt"
+            else -> null
+        } ?: return name
+
+        return "$name.$mimeExtension"
     }
 
     private fun java.io.InputStream.readBounded(maxBytes: Int): ByteArray {
