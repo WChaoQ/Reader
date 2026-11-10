@@ -15,7 +15,7 @@ import java.io.IOException
 import java.io.InputStream
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
-import org.readium.r2.shared.util.AbsoluteUrl
+import org.readium.r2.shared.util.toAbsoluteUrl
 import org.readium.r2.shared.util.getOrElse
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.http.DefaultHttpClient
@@ -158,7 +158,7 @@ class ReadiumEpubBookSource private constructor(
                 pdfFactory = null,
             )
             val opener = PublicationOpener(publicationParser = parser)
-            val sourceUrl = AbsoluteUrl(document.uri.toString())
+            val sourceUrl = document.uri.toAbsoluteUrl()
                 ?: throw IOException("无效的文档 URI：${document.uri}")
             val asset = assetRetriever.retrieve(sourceUrl).getOrElse { error ->
                 throw IOException("无法读取 EPUB 文件：$error")
