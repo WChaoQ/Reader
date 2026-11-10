@@ -29,8 +29,8 @@ class BookSourceRepository @Inject constructor(
                 val source = formatRegistry.open(document, book.format)
                 acquired = source
                 if (source.format != book.format) {
-                    source.close()
                     acquired = null
+                    source.close()
                     error("Stored format ${book.format} does not match parsed format ${source.format}")
                 }
                 source
