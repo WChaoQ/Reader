@@ -49,6 +49,7 @@ class ReflowEngine(
     private val chapterPages = ConcurrentHashMap<Int, List<PageSlice>>()
     private val layouts = LruCache<Int, ChapterLayout>(8)
     private val layoutLock = Any()
+    private val lifecycleLock = Any()
     private val generation = AtomicLong(0)
     private val layoutJobs = ConcurrentHashMap<Int, Job>()
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -156,26 +157,24 @@ class ReflowEngine(
     }
 
     private fun requestLayout(chapter: Int) {
-        if (closed || layoutJobs.containsKey(chapter)) return
-        val requestedGeneration = generation.get()
-        val job = scope.launch(start = CoroutineStart.LAZY) {
-            try {
-                val pages = chapterPages[chapter] ?: return@launch
-                val document = withContext(Dispatchers.IO) { source.loadChapter(chapter) }
-                val layout = buildChapterLayout(document, pages)
-                if (!closed && generation.get() == requestedGeneration) {
-                    putLayout(chapter, layout)
-                    onLayoutReady()
+        synchronized(lifecycleLock) {
+            if (closed || layoutJobs.containsKey(chapter)) return
+            val requestedGeneration = generation.get()
+            val job = scope.launch(start = CoroutineStart.LAZY) {
+                try {
+                    val pages = chapterPages[chapter] ?: return@launch
+                    val document = withContext(Dispatchers.IO) { source.loadChapter(chapter) }
+                    val layout = buildChapterLayout(document, pages)
+                    if (!closed && generation.get() == requestedGeneration) {
+                        putLayout(chapter, layout)
+                        onLayoutReady()
+                    }
+                } finally {
+                    coroutineContext[Job]?.let { layoutJobs.remove(chapter, it) }
                 }
-            } finally {
-                coroutineContext[Job]?.let { layoutJobs.remove(chapter, it) }
             }
-        }
-        val existing = layoutJobs.putIfAbsent(chapter, job)
-        if (existing == null && !closed && generation.get() == requestedGeneration) job.start()
-        else {
-            if (existing == null) layoutJobs.remove(chapter, job)
-            job.cancel()
+            layoutJobs[chapter] = job
+            job.start()
         }
     }
 
@@ -299,10 +298,13 @@ class ReflowEngine(
 
     override fun close() {
         if (!closeStarted.compareAndSet(false, true)) return
-        closed = true
-        val activeJobs = mutableListOf<Job>()
-        paginateJob?.let { activeJobs.add(it) }
-        activeJobs.addAll(layoutJobs.values)
+        val activeJobs = synchronized(lifecycleLock) {
+            closed = true
+            buildList {
+                paginateJob?.let(::add)
+                addAll(layoutJobs.values)
+            }
+        }
         activeJobs.forEach { it.cancel() }
         layoutJobs.clear()
         synchronized(layoutLock) { layouts.evictAll() }
