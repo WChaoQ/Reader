@@ -217,7 +217,7 @@ class ReaderViewModel @Inject constructor(
             _state.update { it.copy(searching = false) }
             return
         }
-        val source = heldSource
+        val source = session?.source
         if (source == null || _state.value.format == BookFormat.PDF) {
             _state.update { it.copy(searching = false, snackbar = "当前格式暂不支持全文搜索") }
             return
