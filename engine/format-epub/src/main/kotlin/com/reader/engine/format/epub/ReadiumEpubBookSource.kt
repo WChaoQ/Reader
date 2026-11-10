@@ -21,6 +21,9 @@ import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Readium-backed EPUB session.
@@ -35,13 +38,16 @@ class ReadiumEpubBookSource private constructor(
 
     private val readingOrder = publication.readingOrder
     private val tocEntries = publication.tableOfContents.mapNotNull { it.toTocEntry() }
+    private val accessMutex = Mutex()
+    private val closed = AtomicBoolean(false)
 
     override val format: BookFormat = BookFormat.EPUB
     override val chapterCount: Int = readingOrder.size
 
-    override suspend fun metadata(): BookMetadata {
+    override suspend fun metadata(): BookMetadata = accessMutex.withLock {
+        ensureOpen()
         val metadata = publication.metadata
-        return BookMetadata(
+        BookMetadata(
             title = metadata.title?.takeIf { it.isNotBlank() }
                 ?: displayName.substringBeforeLast('.'),
             author = metadata.authors.firstOrNull()?.name?.takeIf { it.isNotBlank() },
@@ -50,9 +56,13 @@ class ReadiumEpubBookSource private constructor(
         )
     }
 
-    override suspend fun toc(): List<TocEntry> = tocEntries
+    override suspend fun toc(): List<TocEntry> = accessMutex.withLock {
+        ensureOpen()
+        tocEntries
+    }
 
-    override suspend fun loadChapter(index: Int): Chapter {
+    override suspend fun loadChapter(index: Int): Chapter = accessMutex.withLock {
+        ensureOpen()
         require(index in readingOrder.indices) { "Chapter out of range: $index" }
         val link = readingOrder[index]
         val href = link.href.toString()
@@ -69,10 +79,11 @@ class ReadiumEpubBookSource private constructor(
         val blocks = XhtmlToBlocks.parse(xhtml, href)
         val title = findTocTitle(tocEntries, index)
             ?: href.substringAfterLast('/').substringBeforeLast('.')
-        return Chapter(index = index, title = title, blocks = blocks)
+        Chapter(index = index, title = title, blocks = blocks)
     }
 
-    override suspend fun openResource(ref: ResourceRef): InputStream {
+    override suspend fun openResource(ref: ResourceRef): InputStream = accessMutex.withLock {
+        ensureOpen()
         val target = normalizeHref(ref.href)
         val link = (readingOrder + publication.resources + publication.links)
             .firstOrNull { normalizeHref(it.href.toString()) == target }
@@ -86,11 +97,15 @@ class ReadiumEpubBookSource private constructor(
         } finally {
             resource.close()
         }
-        return ByteArrayInputStream(bytes)
+        ByteArrayInputStream(bytes)
     }
 
     override fun close() {
-        publication.close()
+        if (closed.compareAndSet(false, true)) publication.close()
+    }
+
+    private fun ensureOpen() {
+        check(!closed.get()) { "EPUB source is already closed" }
     }
 
     private fun findTocTitle(entries: List<TocEntry>, chapterIndex: Int): String? {
