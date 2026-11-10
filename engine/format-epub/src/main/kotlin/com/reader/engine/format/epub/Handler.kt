@@ -22,9 +22,7 @@ class EpubFormatHandler @Inject constructor(
 
     override fun canHandle(fileName: String, mimeType: String?, magic: ByteArray): Boolean =
         fileName.endsWith(".epub", ignoreCase = true) ||
-            mimeType == "application/epub+zip" ||
-            (magic.size >= 2 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte() &&
-                mimeType in setOf("application/zip", "application/octet-stream", null))
+            mimeType.equals("application/epub+zip", ignoreCase = true)
 
     override suspend fun open(document: DocumentHandle): BookSource =
         ReadiumEpubBookSource.open(context, document)
