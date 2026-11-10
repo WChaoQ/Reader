@@ -103,6 +103,10 @@ class FixedEngine(
         canvas.drawColor(backgroundColor)
         if (closed || pageIndex !in 0 until pageTotal) return
 
+        // Prefetch neighbours so continuous browse/swipe rarely shows an empty page.
+        if (pageIndex > 0) requestPage(pageIndex - 1)
+        if (pageIndex + 1 < pageTotal) requestPage(pageIndex + 1)
+
         val bitmap = bitmapCache.get(pageIndex)
         if (bitmap == null) {
             requestPage(pageIndex)
@@ -126,7 +130,8 @@ class FixedEngine(
     }
 
     private fun requestPage(pageIndex: Int) {
-        if (closed || renderJobs.containsKey(pageIndex)) return
+        if (closed || pageIndex !in 0 until pageTotal || renderJobs.containsKey(pageIndex)) return
+        if (bitmapCache.get(pageIndex) != null) return
         val job = renderScope.launch(start = CoroutineStart.LAZY) {
             try {
                 val bitmap = renderBitmap(pageIndex, pageWidthPx)
