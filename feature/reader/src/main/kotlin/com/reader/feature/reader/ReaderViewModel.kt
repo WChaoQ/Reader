@@ -212,12 +212,13 @@ class ReaderViewModel @Inject constructor(
             _state.update { it.copy(searching = false) }
             return
         }
-        val source = session?.source
-        if (source == null || _state.value.format == BookFormat.PDF) {
+        val activeSession = session
+        val source = activeSession?.source
+        if (activeSession == null || source == null || _state.value.format == BookFormat.PDF) {
             _state.update { it.copy(searching = false, snackbar = "当前格式暂不支持全文搜索") }
             return
         }
-        searchJob = viewModelScope.launch(dispatchers.io) {
+        searchJob = activeSession.launchTask(dispatchers.io) {
             val hits = mutableListOf<SearchHit>()
             val q = query.trim()
             for (ch in 0 until source.chapterCount) {
@@ -406,6 +407,7 @@ class ReaderViewModel @Inject constructor(
     override fun onCleared() {
         saveProgressNow()
         engineObserveJob?.cancel()
+        searchJob?.cancel()
         openGeneration.incrementAndGet()
         session?.close()
         session = null
