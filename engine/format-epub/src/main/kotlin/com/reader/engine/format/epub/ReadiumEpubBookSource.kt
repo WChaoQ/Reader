@@ -42,9 +42,9 @@ class ReadiumEpubBookSource private constructor(
     override suspend fun metadata(): BookMetadata {
         val metadata = publication.metadata
         return BookMetadata(
-            title = metadata.title.takeIf(String::isNotBlank)
+            title = metadata.title?.takeIf { it.isNotBlank() }
                 ?: displayName.substringBeforeLast('.'),
-            author = metadata.authors.firstOrNull()?.name?.takeIf(String::isNotBlank),
+            author = metadata.authors.firstOrNull()?.name?.takeIf { it.isNotBlank() },
             language = metadata.languages.firstOrNull(),
             coverHref = publication.linkWithRel("cover")?.href?.toString(),
         )
@@ -123,7 +123,7 @@ class ReadiumEpubBookSource private constructor(
             ?: children.firstOrNull()?.locator?.chapter
             ?: return null
         return TocEntry(
-            title = title?.takeIf(String::isNotBlank) ?: href.toString().substringAfterLast('/'),
+            title = title?.takeIf { it.isNotBlank() } ?: href.toString().substringAfterLast('/'),
             locator = Locator(chapter = locatorChapter, offset = 0),
             children = children,
         )
