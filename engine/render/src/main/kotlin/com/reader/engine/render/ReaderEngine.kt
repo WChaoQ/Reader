@@ -34,4 +34,9 @@ interface ReaderEngine {
     suspend fun awaitPage(pageIndex: Int): Boolean = true
 
     fun close()
+
+    /** Wait until in-flight backend work has stopped and owned resources are released. */
+    suspend fun closeAndJoin() {
+        close()
+    }
 }
