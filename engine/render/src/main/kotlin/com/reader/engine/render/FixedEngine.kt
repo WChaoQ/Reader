@@ -8,12 +8,14 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.LruCache
 import com.reader.core.model.Locator
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -27,8 +29,8 @@ import kotlin.math.sqrt
 /**
  * Fixed-layout PDF engine.
  *
- * PdfRenderer access and bitmap creation are serialized and performed on an IO dispatcher.
- * The drawing callback only paints a cached bitmap; cache misses schedule a background render.
+ * PdfRenderer access is serialized on [ioDispatcher]. Drawing only paints cached bitmaps;
+ * cache misses schedule a background render and notify the UI on the main thread.
  */
 class FixedEngine(
     private val pfd: ParcelFileDescriptor,
@@ -41,18 +43,30 @@ class FixedEngine(
     private val renderer = try {
         PdfRenderer(pfd)
     } catch (failure: Throwable) {
-        pfd.close()
+        runCatching { pfd.close() }
         throw failure
     }
     private val mutex = Mutex()
     private val renderScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val renderJobs = ConcurrentHashMap<Int, Job>()
+    private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var closed = false
 
     private val bitmapCache = object : LruCache<Int, Bitmap>(MAX_CACHE_KB) {
         override fun sizeOf(key: Int, value: Bitmap): Int =
             (value.byteCount / 1024).coerceAtLeast(1)
+
+        override fun entryRemoved(
+            evicted: Boolean,
+            key: Int,
+            oldValue: Bitmap,
+            newValue: Bitmap?,
+        ) {
+            if (evicted && oldValue !== newValue && !oldValue.isRecycled) {
+                oldValue.recycle()
+            }
+        }
     }
 
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
@@ -66,7 +80,6 @@ class FixedEngine(
             ),
         ),
     )
-    // Match the reader's sepia paper surface (#F5E6C8) without changing black text.
     private val sepiaFilter = ColorMatrixColorFilter(
         ColorMatrix(
             floatArrayOf(
@@ -86,6 +99,13 @@ class FixedEngine(
     private val _ready = kotlinx.coroutines.flow.MutableStateFlow(true)
     override val ready: kotlinx.coroutines.flow.StateFlow<Boolean> = _ready
 
+    init {
+        if (pageTotal > 0) {
+            requestPage(0)
+            if (pageTotal > 1) requestPage(1)
+        }
+    }
+
     override fun locatorOf(pageIndex: Int): Locator {
         val total = pageTotal.coerceAtLeast(1)
         val page = pageIndex.coerceIn(0, total - 1)
@@ -103,12 +123,11 @@ class FixedEngine(
         canvas.drawColor(backgroundColor)
         if (closed || pageIndex !in 0 until pageTotal) return
 
-        // Prefetch neighbours so continuous browse/swipe rarely shows an empty page.
         if (pageIndex > 0) requestPage(pageIndex - 1)
         if (pageIndex + 1 < pageTotal) requestPage(pageIndex + 1)
 
-        val bitmap = bitmapCache.get(pageIndex)
-        if (bitmap == null) {
+        val bitmap = synchronized(bitmapCache) { bitmapCache.get(pageIndex) }
+        if (bitmap == null || bitmap.isRecycled) {
             requestPage(pageIndex)
             return
         }
@@ -130,25 +149,36 @@ class FixedEngine(
     }
 
     private fun requestPage(pageIndex: Int) {
-        if (closed || pageIndex !in 0 until pageTotal || renderJobs.containsKey(pageIndex)) return
-        if (bitmapCache.get(pageIndex) != null) return
+        if (closed || pageIndex !in 0 until pageTotal) return
+        synchronized(bitmapCache) {
+            val existing = bitmapCache.get(pageIndex)
+            if (existing != null && !existing.isRecycled) return
+        }
+        if (renderJobs.containsKey(pageIndex)) return
+
         val job = renderScope.launch(start = CoroutineStart.LAZY) {
             try {
                 val bitmap = renderBitmap(pageIndex, pageWidthPx)
                 if (bitmap != null && !closed) {
-                    bitmapCache.put(pageIndex, bitmap)
-                    onPageRendered()
+                    synchronized(bitmapCache) {
+                        bitmapCache.put(pageIndex, bitmap)
+                    }
+                    mainHandler.post {
+                        if (!closed) onPageRendered()
+                    }
                 } else {
                     bitmap?.recycle()
                 }
             } catch (_: Exception) {
-                // The reader remains usable; the page can be retried when requested again.
             } finally {
                 renderJobs.remove(pageIndex)
             }
         }
-        renderJobs[pageIndex] = job
-        job.start()
+        if (renderJobs.putIfAbsent(pageIndex, job) == null) {
+            job.start()
+        } else {
+            job.cancel()
+        }
     }
 
     private suspend fun renderBitmap(pageIndex: Int, targetWidth: Int): Bitmap? = mutex.withLock {
@@ -159,7 +189,7 @@ class FixedEngine(
                 val scale = requestedWidth.toFloat() / page.width.coerceAtLeast(1)
                 val requestedHeight = (page.height * scale).toInt().coerceAtLeast(1)
                 val requestedPixels = requestedWidth.toLong() * requestedHeight.toLong()
-                val maxPixels = MAX_BITMAP_BYTES / 2L // RGB_565 uses two bytes per pixel.
+                val maxPixels = MAX_BITMAP_BYTES / 4L
                 val reduction = if (requestedPixels > maxPixels) {
                     sqrt(maxPixels.toDouble() / requestedPixels.toDouble()).toFloat()
                 } else {
@@ -167,7 +197,7 @@ class FixedEngine(
                 }
                 val width = (requestedWidth * reduction).toInt().coerceAtLeast(1)
                 val height = (requestedHeight * reduction).toInt().coerceAtLeast(1)
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 bitmap.eraseColor(Color.WHITE)
                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 bitmap
@@ -188,17 +218,21 @@ class FixedEngine(
         renderJobs.values.forEach { it.cancel() }
         renderJobs.clear()
         renderScope.cancel()
-        bitmapCache.evictAll()
+        mainHandler.removeCallbacksAndMessages(null)
+        synchronized(bitmapCache) {
+            bitmapCache.evictAll()
+        }
         cleanupScope.launch {
             mutex.withLock {
                 runCatching { renderer.close() }
+                runCatching { pfd.close() }
             }
             cleanupScope.cancel()
         }
     }
 
     private companion object {
-        const val MAX_CACHE_KB = 24 * 1024
-        const val MAX_BITMAP_BYTES = 12 * 1024 * 1024
+        const val MAX_CACHE_KB = 32 * 1024
+        const val MAX_BITMAP_BYTES = 16 * 1024 * 1024
     }
 }
