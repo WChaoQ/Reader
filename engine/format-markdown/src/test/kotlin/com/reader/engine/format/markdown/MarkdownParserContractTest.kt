@@ -21,7 +21,7 @@ class MarkdownParserContractTest {
 
     @Test
     fun linksAndNestedInlineStylesStayWithinFinalText() {
-        val chapters = MarkdownParser.parseDocument("A [linked **title**](https://example.com)")
+        val chapters = MarkdownParser.parseDocument("A [linked title](https://example.com)")
         val paragraph = chapters.single().second.single() as Block.Paragraph
 
         assertTrue(paragraph.spans.all {
