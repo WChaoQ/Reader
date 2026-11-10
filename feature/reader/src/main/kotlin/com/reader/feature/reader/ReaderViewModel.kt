@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.reader.core.common.ReaderDispatchers
 import com.reader.core.data.BookmarkRepository
 import com.reader.core.data.BookRepository
-import com.reader.core.data.BookSourceRepository
 import com.reader.core.data.ProgressRepository
 import com.reader.core.model.Bookmark
 import com.reader.core.data.ReaderPreferencesRepository
@@ -15,17 +14,13 @@ import com.reader.core.model.Block
 import com.reader.core.model.BookFormat
 import com.reader.core.model.Locator
 import com.reader.core.model.TocEntry
-import com.reader.engine.format.BookSource
 import com.reader.engine.layout.LayoutConfig
-import com.reader.engine.layout.SimplePaginator
-import com.reader.engine.render.FixedEngine
 import com.reader.engine.render.PageCountInfo
 import com.reader.engine.render.ReaderEngine
-import com.reader.engine.render.ReflowEngine
-import com.reader.engine.render.ReaderSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,9 +28,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 data class SearchHit(
@@ -87,8 +79,7 @@ class ReaderViewModel @Inject constructor(
     private val progressRepository: ProgressRepository,
     private val settingsRepository: ReaderPreferencesRepository,
     private val bookmarkRepository: BookmarkRepository,
-    private val sourceRepository: BookSourceRepository,
-    private val paginator: SimplePaginator,
+    private val sessionFactory: ReaderSessionFactory,
     private val dispatchers: ReaderDispatchers,
 ) : ViewModel() {
 
@@ -97,16 +88,15 @@ class ReaderViewModel @Inject constructor(
     private val _state = MutableStateFlow(ReaderUiState())
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
 
-    private var engine: ReaderEngine? = null
-    private var heldSource: BookSource? = null
     private var session: ReaderSession? = null
+    private val engine: ReaderEngine? get() = session?.engine
+    private val openGeneration = AtomicLong(0)
     private var saveJob: Job? = null
     private var searchJob: Job? = null
     private var openJob: Job? = null
     private var engineObserveJob: Job? = null
     private var pageJumpJob: Job? = null
     private var currentLocator: Locator = Locator(0, 0)
-    private val openMutex = Mutex()
     private var pageWidth = 1080
     private var pageHeight = 1920
     private var fontScalePxPerSp = 1f
@@ -271,7 +261,7 @@ class ReaderViewModel @Inject constructor(
         // previous PDF page on screen instead of briefly painting an empty canvas.
         pageJumpJob?.cancel()
         pageJumpJob = viewModelScope.launch {
-            if (activeEngine is FixedEngine && !activeEngine.awaitPage(next)) return@launch
+            if (!activeEngine.awaitPage(next)) return@launch
             if (engine !== activeEngine) return@launch
             currentLocator = targetLocator ?: activeEngine.locatorOf(next)
             _state.update { it.copy(currentPage = next) }
@@ -297,10 +287,11 @@ class ReaderViewModel @Inject constructor(
     }
 
     private suspend fun open(startLocator: Locator? = null) {
-        openMutex.withLock { openInternal(startLocator) }
+        openInternal(startLocator)
     }
 
     private suspend fun openInternal(startLocator: Locator?) {
+        val generation = openGeneration.incrementAndGet()
         pageJumpJob?.cancel()
         pageJumpJob = null
         engineObserveJob?.cancel()
@@ -308,10 +299,8 @@ class ReaderViewModel @Inject constructor(
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
         searchJob?.cancel()
         searchJob?.join()
-        session?.close() ?: engine?.close()
+        session?.close()
         session = null
-        engine = null
-        heldSource = null
         try {
             val book = bookRepository.getBook(bookId)
                 ?: run {
@@ -321,54 +310,37 @@ class ReaderViewModel @Inject constructor(
             val settings = settingsRepository.settings.first()
             val saved = startLocator ?: progressRepository.get(bookId) ?: Locator(0, 0)
             currentLocator = saved
-            var toc: List<TocEntry> = emptyList()
-            val eng: ReaderEngine = if (book.format == BookFormat.PDF) {
-                withContext(dispatchers.io) {
-                    FixedEngine(
-                        pfd = sourceRepository.openPdfDescriptor(book),
-                        pageWidthPx = pageWidth,
-                        theme = settings.theme,
-                        initialPageIndex = saved.chapter,
-                        ioDispatcher = dispatchers.io,
-                        onPageRendered = {
-                            _state.update { state -> state.copy(renderRevision = state.renderRevision + 1) }
-                        },
-                    )
-                }.also {
-                    toc = (0 until it.pageCount.value.display).map { page ->
-                        TocEntry("第 ${page + 1} 页", Locator(page, 0))
-                    }
-                }
-            } else {
-                val source = sourceRepository.open(book)
-                heldSource = source
-                toc = try {
-                    source.toc()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Throwable) {
-                    emptyList()
-                }
-                val config = LayoutConfig(
-                    pageWidthPx = pageWidth,
-                    pageHeightPx = pageHeight,
-                    textSizePx = settings.fontSizeSp * fontScalePxPerSp,
-                    lineSpacingMult = settings.lineSpacingMult,
-                    paragraphSpacingPx = settings.paragraphSpacingPx,
-                    justify = settings.justify,
-                )
-                ReflowEngine(
-                    source = source,
-                    config = config,
-                    paginator = paginator,
-                    scope = viewModelScope,
-                    bookId = bookId,
-                    onLayoutReady = {
+            val config = LayoutConfig(
+                pageWidthPx = pageWidth,
+                pageHeightPx = pageHeight,
+                textSizePx = settings.fontSizeSp * fontScalePxPerSp,
+                lineSpacingMult = settings.lineSpacingMult,
+                paragraphSpacingPx = settings.paragraphSpacingPx,
+                justify = settings.justify,
+            )
+            val openedSession = sessionFactory.open(
+                book = book,
+                layoutConfig = config,
+                initialLocator = saved,
+                theme = settings.theme,
+                onLayoutReady = {
+                    if (openGeneration.get() == generation) {
                         _state.update { state -> state.copy(renderRevision = state.renderRevision + 1) }
-                    },
-                ).also { it.start(saved) }
+                    }
+                },
+                onPageRendered = {
+                    if (openGeneration.get() == generation) {
+                        _state.update { state -> state.copy(renderRevision = state.renderRevision + 1) }
+                    }
+                },
+            )
+            if (openGeneration.get() != generation) {
+                openedSession.close()
+                return
             }
-            session = ReaderSession(engine = eng, source = heldSource)
+            session = openedSession
+            val eng = openedSession.engine
+            val toc = openedSession.toc
             engine = eng
             // Both reflow and fixed-layout engines become ready only when the opening
             // page is actually drawable. In particular, PDF construction alone is not
@@ -395,43 +367,42 @@ class ReaderViewModel @Inject constructor(
             }
             bookRepository.updateLastRead(bookId, System.currentTimeMillis())
         } catch (cancelled: CancellationException) {
-            session?.close() ?: if (engine != null) engine?.close() else heldSource?.close()
-            session = null
-            engine = null
-            heldSource = null
+            if (openGeneration.get() == generation) {
+                session?.close()
+                session = null
+            }
             throw cancelled
         } catch (security: SecurityException) {
-            session?.close() ?: if (engine != null) engine?.close() else heldSource?.close()
-            session = null
-            engine = null
-            heldSource = null
-            _state.update {
-                it.copy(isLoading = false, error = "无法访问原文件，请重新从系统文件选择器打开")
+            if (openGeneration.get() == generation) {
+                session?.close()
+                session = null
+                _state.update {
+                    it.copy(isLoading = false, error = "无法访问原文件，请重新从系统文件选择器打开")
+                }
             }
         } catch (missing: java.io.FileNotFoundException) {
-            session?.close() ?: if (engine != null) engine?.close() else heldSource?.close()
-            session = null
-            engine = null
-            heldSource = null
-            _state.update {
-                it.copy(isLoading = false, error = "原文件已移动或删除，请重新选择文档")
+            if (openGeneration.get() == generation) {
+                session?.close()
+                session = null
+                _state.update {
+                    it.copy(isLoading = false, error = "原文件已移动或删除，请重新选择文档")
+                }
             }
         } catch (t: Throwable) {
-            session?.close() ?: if (engine != null) engine?.close() else heldSource?.close()
-            session = null
-            engine = null
-            heldSource = null
-            _state.update { it.copy(isLoading = false, error = t.message ?: "打开失败") }
+            if (openGeneration.get() == generation) {
+                session?.close()
+                session = null
+                _state.update { it.copy(isLoading = false, error = t.message ?: "打开失败") }
+            }
         }
     }
 
     override fun onCleared() {
         saveProgressNow()
         engineObserveJob?.cancel()
-        session?.close() ?: engine?.close() ?: heldSource?.close()
+        openGeneration.incrementAndGet()
+        session?.close()
         session = null
-        engine = null
-        heldSource = null
         super.onCleared()
     }
 }
