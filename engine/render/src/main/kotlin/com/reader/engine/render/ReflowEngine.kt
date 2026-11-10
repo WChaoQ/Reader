@@ -300,8 +300,8 @@ class ReflowEngine(
         if (!closeStarted.compareAndSet(false, true)) return
         val activeJobs = synchronized(lifecycleLock) {
             closed = true
-            buildList {
-                paginateJob?.let(::add)
+            mutableListOf<Job>().apply {
+                paginateJob?.let { add(it) }
                 addAll(layoutJobs.values)
             }
         }
