@@ -38,7 +38,7 @@ class BookmarkRepository @Inject constructor(
 private fun BookmarkEntity.toModel() = Bookmark(
     id = id,
     bookId = bookId,
-    locator = Locator(chapter = chapter, offset = offset),
+    locator = Locator(chapter = chapter.coerceAtLeast(0), offset = offset.coerceAtLeast(0)),
     snippet = snippet,
     createdAt = createdAt,
 )
