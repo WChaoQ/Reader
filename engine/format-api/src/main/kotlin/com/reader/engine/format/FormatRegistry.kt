@@ -28,9 +28,15 @@ class FormatRegistry @Inject constructor(
     suspend fun open(document: DocumentHandle, expectedFormat: BookFormat? = null): BookSource {
         val magic = document.openInputStream().use { it.readNBytes(MAGIC_BYTES) }
         require(magic.isNotEmpty()) { "Selected document is empty" }
-        val handler = expectedFormat?.let(::handlerFor)
-            ?: detect(document.displayName, document.mimeType, magic)
-            ?: throw UnsupportedDocumentFormatException(document.displayName)
+        val handler = if (expectedFormat != null) {
+            handlerFor(expectedFormat)
+                ?: throw UnsupportedDocumentFormatException(
+                    "${document.displayName} (expected $expectedFormat)",
+                )
+        } else {
+            detect(document.displayName, document.mimeType, magic)
+                ?: throw UnsupportedDocumentFormatException(document.displayName)
+        }
 
         var acquired: BookSource? = null
         return try {
