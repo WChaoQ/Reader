@@ -217,11 +217,13 @@ Feature 可以依赖 Core 公共 API；Reader 可以依赖 Engine 公共 API。F
 - 长代码块、表格和长行不得撑爆阅读容器。
 
 **EPUB**
-- 分离 ZIP 容器、OPF 元数据、manifest、spine、导航目录和章节解析。
-- 不默认将整本 EPUB 解压到应用私有目录。
-- 优先建立轻量索引，章节按需读取；缓存必须可清理、校验和重建。
-- 规范化 ZIP 条目路径，拒绝目录穿越。
-- 对缺失资源、错误编码、损坏压缩包和异常目录提供降级行为。
+- 当前通过 Readium Kotlin Toolkit 3.4.0 的 `AssetRetriever` + `PublicationOpener` 打开 SAF URI，由 Readium 负责 EPUB 容器、OPF、manifest、reading order、目录和资源解析。
+- Readium 仅封装在 `:engine:format-epub` 的 `ReadiumEpubBookSource` 中；对外仍只暴露项目自己的 `BookSource`、`Chapter`、`Locator` 和 `ResourceRef`。
+- Reader 不使用 Readium Navigator；章节 XHTML 由适配器转换为项目 Block 模型，继续复用现有分页和渲染引擎。
+- 不默认将整本 EPUB 解压到应用私有目录；按需读取章节和资源，不复制用户原始文档。
+- 章节相对资源路径由独立的 `EpubPathResolver` 解析，不能直接拼接不可信路径。
+- Readium 解析失败、reading order 为空、资源缺失或 URI 授权失效时，返回可处理错误并释放 Publication。
+- 未来替换 Readium 时，只替换 EPUB Handler / BookSource 实现，不修改 Feature、Layout 或 Render 的公开接口。
 
 **PDF**
 - 以页为单位提供内容，不将整份 PDF 渲染为位图集合。
