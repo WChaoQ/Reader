@@ -345,6 +345,32 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 7. 逐步将 Feature 对具体引擎类的认知收敛到 Session/Engine Facade；不为此一次性重写 UI。
 8. 用真实设备和 fixture 建立首屏、翻页、内存与稳定性基线。
 
+### 13.0 架构落地记录
+
+**2026-11-11：阶段 A — 冻结公共协议**
+
+已完成：
+- 明确 `Locator` 的零基 chapter/page、非负 UTF-16 offset 和 0..1 progression 语义，并增加构造约束。
+- 明确 `Block` / `Span` 的语义模型；Span 采用 UTF-16 半开区间 `[start, end)`，Paragraph / Heading 构造时验证范围。
+- EPUB XHTML 空白归一化现在同步映射 Span 边界，避免原始 XHTML 偏移与最终正文文本错位。
+- `PageCountInfo` 增加 exact / estimated / available 的非负与一致性约束。
+- `ReaderEngine` 增加显式 `ReaderCapability`，UI 不再通过空字符串或格式枚举推断可选能力。
+- `Format API` 补充 DocumentHandle、FormatHandler、BookSource 的资源所有权、并发、取消、索引和第三方类型隔离规范，详见 `engine/format-api/README.md`。
+- FormatRegistry 对指定格式不再回退到其它格式 Handler；Handler 返回 Source 后检查取消状态，失败或取消时释放已取得的 Source。
+- BookSourceRepository 为 withContext 返回阶段可能发生的取消增加资源回收保护，避免 Source / PFD 已创建却未交给调用方。
+- 审核 TXT / Markdown / EPUB / PDF Source：EPUB Publication 操作串行化且 close 幂等；PDF Source 访问与关闭串行化且 close 幂等；TXT / Markdown 使用独立流或不可变解析结果。
+- Reader Feature 不直接引用 Readium 类型；Readium 仍封装在 EPUB Adapter 内。ReaderViewModel 通过 ReaderEngine capability 检查全文搜索能力。
+- 新增 Core Model 契约测试、XHTML Span 偏移回归测试和 PageCountInfo 测试；GitHub Actions 加入 Core Model 与 Render Engine 测试。
+
+阶段 A 尚需验收：
+- 必须由用户手动运行 GitHub Actions，确认新增测试和全项目编译通过；本轮没有触发构建。
+- 真实 EPUB fixture 仍需覆盖嵌套标签、混合空白、非 ASCII / emoji、链接和粗斜体重叠范围。
+- 需要在实际设备确认旧数据库中的 Locator 数据全部满足新约束；若发现历史脏数据，应在读取边界做有界修复，而不是放宽新协议。
+
+阶段边界：
+- 阶段 A 是协议冻结与契约验证，不包含分页算法、缓存策略或阅读界面优化。
+- 阶段 A 未通过构建和 fixture 验收前，不进入阶段 C 及后续格式 / 布局优化。
+
 ### 13.1 架构落地记录
 
 **2026-11-11：阶段 B — Session 生命周期与创建边界**
