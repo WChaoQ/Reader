@@ -11,6 +11,7 @@ import com.reader.engine.layout.PageSlice
 import com.reader.engine.layout.PaginationEvent
 import com.reader.engine.layout.Paginator
 import com.reader.engine.layout.StaticLayoutFactory
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
@@ -51,6 +52,8 @@ class ReflowEngine(
     private val generation = AtomicLong(0)
     private val layoutJobs = ConcurrentHashMap<Int, Job>()
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val closeStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val closeCompleted = CompletableDeferred<Unit>()
 
     private var paginateJob: Job? = null
     @Volatile private var closed = false
@@ -295,7 +298,7 @@ class ReflowEngine(
     }
 
     override fun close() {
-        if (closed) return
+        if (!closeStarted.compareAndSet(false, true)) return
         closed = true
         val activeJobs = mutableListOf<Job>()
         paginateJob?.let { activeJobs.add(it) }
@@ -305,12 +308,20 @@ class ReflowEngine(
         synchronized(layoutLock) { layouts.evictAll() }
         chapterPages.clear()
         cleanupScope.launch {
-            activeJobs.joinAll()
             try {
+                activeJobs.joinAll()
                 source.close()
+                closeCompleted.complete(Unit)
+            } catch (failure: Throwable) {
+                closeCompleted.completeExceptionally(failure)
             } finally {
                 cleanupScope.cancel()
             }
         }
+    }
+
+    override suspend fun closeAndJoin() {
+        close()
+        closeCompleted.await()
     }
 }
