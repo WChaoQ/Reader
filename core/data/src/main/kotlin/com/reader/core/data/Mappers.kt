@@ -32,8 +32,12 @@ fun Book.toEntity(chapterCount: Int = 0, state: String = "ready"): BookEntity = 
     sourceUri = sourceUri,
 )
 
+/**
+ * Bounds legacy persisted values at the database boundary before constructing
+ * the stricter public Locator contract. New writes always use validated Locator.
+ */
 fun ProgressEntity.toLocator(): Locator = Locator(
-    chapter = chapter,
-    offset = offset,
-    progression = progression,
+    chapter = chapter.coerceAtLeast(0),
+    offset = offset.coerceAtLeast(0),
+    progression = progression.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f,
 )
