@@ -19,6 +19,7 @@ import com.reader.engine.render.PageCountInfo
 import com.reader.engine.render.ReaderEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.delay
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -302,9 +304,9 @@ class ReaderViewModel @Inject constructor(
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
         searchJob?.cancel()
         searchJob?.join()
-        session?.close()
-        session = null
         try {
+            withContext(NonCancellable) { session?.closeAndJoin() }
+            session = null
             val book = bookRepository.getBook(bookId)
                 ?: run {
                     _state.update { it.copy(isLoading = false, error = "书籍不存在") }
@@ -371,13 +373,13 @@ class ReaderViewModel @Inject constructor(
             bookRepository.updateLastRead(bookId, System.currentTimeMillis())
         } catch (cancelled: CancellationException) {
             if (openGeneration.get() == generation) {
-                session?.close()
+                withContext(NonCancellable) { session?.closeAndJoin() }
                 session = null
             }
             throw cancelled
         } catch (security: SecurityException) {
             if (openGeneration.get() == generation) {
-                session?.close()
+                withContext(NonCancellable) { session?.closeAndJoin() }
                 session = null
                 _state.update {
                     it.copy(isLoading = false, error = "无法访问原文件，请重新从系统文件选择器打开")
@@ -385,7 +387,7 @@ class ReaderViewModel @Inject constructor(
             }
         } catch (missing: java.io.FileNotFoundException) {
             if (openGeneration.get() == generation) {
-                session?.close()
+                withContext(NonCancellable) { session?.closeAndJoin() }
                 session = null
                 _state.update {
                     it.copy(isLoading = false, error = "原文件已移动或删除，请重新选择文档")
@@ -393,7 +395,7 @@ class ReaderViewModel @Inject constructor(
             }
         } catch (t: Throwable) {
             if (openGeneration.get() == generation) {
-                session?.close()
+                withContext(NonCancellable) { session?.closeAndJoin() }
                 session = null
                 _state.update { it.copy(isLoading = false, error = t.message ?: "打开失败") }
             }
