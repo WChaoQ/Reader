@@ -42,6 +42,10 @@ class ReflowEngine(
 
     private val _ready = MutableStateFlow(false)
     override val ready: StateFlow<Boolean> = _ready.asStateFlow()
+    override val capabilities: Set<ReaderCapability> = setOf(
+        ReaderCapability.PAGE_TEXT,
+        ReaderCapability.FULL_TEXT_SEARCH,
+    )
 
     /** Immutable index snapshot, atomically replaced after each complete rebuild. */
     @Volatile private var pageIndexSnapshot: List<Pair<Int, Int>> = emptyList()
