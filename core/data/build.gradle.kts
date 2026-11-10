@@ -16,4 +16,5 @@ dependencies {
     implementation(project(":engine:format-api"))
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.core.ktx)
+    testImplementation(libs.junit)
 }
