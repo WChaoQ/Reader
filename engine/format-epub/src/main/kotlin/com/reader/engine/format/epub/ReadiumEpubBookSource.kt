@@ -95,8 +95,17 @@ class ReadiumEpubBookSource private constructor(
 
     private fun findTocTitle(entries: List<TocEntry>, chapterIndex: Int): String? {
         for (entry in entries) {
-            if (entry.locator.chapter == chapterIndex) return entry.title
+            // Prefer a leaf/chapter title over a parent section that points to
+            // the same first descendant chapter.
             findTocTitle(entry.children, chapterIndex)?.let { return it }
+            if (entry.locator.chapter == chapterIndex && entry.children.isEmpty()) {
+                return entry.title
+            }
+        }
+        // A direct reading-order entry may also have children; use it only as a
+        // fallback when no more specific descendant title exists.
+        for (entry in entries) {
+            if (entry.locator.chapter == chapterIndex) return entry.title
         }
         return null
     }
