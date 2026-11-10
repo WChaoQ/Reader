@@ -75,10 +75,8 @@ import kotlin.math.roundToInt
 /**
  * Continuous immersion / browse reader.
  *
- * - Immersion (browseProgress ≈ 0): current page fills the viewport, chrome hidden.
- * - Browse (browseProgress ≈ 1): pages scale to ~78–84%, adjacent pages peek from the sides.
- * - pageOffset is fractional during drag; on release it springs to at most ±1 page.
- * - Only the settled page and its immediate neighbours are composed (performance).
+ * pageOffset > 0 means the strip has moved toward the *next* page (finger dragged left).
+ * translation of page i = (i - settledPage - pageOffset) * stride
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -151,21 +149,22 @@ fun ReaderRoute(
                 val browseProgress = remember { Animatable(0f) }
                 val pageOffset = remember { Animatable(0f) }
                 var dragVelocity by remember { mutableFloatStateOf(0f) }
-                // Keep gesture detectors stable; read latest progress/offset via updated state.
                 val progressState = rememberUpdatedState(browseProgress.value)
-                val offsetState = rememberUpdatedState(pageOffset.value)
+                var suppressOffsetReset by remember { mutableFloatStateOf(0f) }
 
-                // External page jumps (TOC / search / slider) snap offset to zero.
                 LaunchedEffect(settledPage) {
+                    if (suppressOffsetReset > 0f) {
+                        suppressOffsetReset = 0f
+                        return@LaunchedEffect
+                    }
                     if (abs(pageOffset.value) > 0.001f) {
                         pageOffset.snapTo(0f)
                     }
                 }
 
                 val progress = browseProgress.value
-                val scale = lerp(1f, 0.80f, progress)
-                val gapPx = with(density) { lerp(0f, 14.dp.toPx(), progress) }
-                // Distance between adjacent page centres in browse mode.
+                val scale = lerp(1f, 0.82f, progress)
+                val gapPx = with(density) { lerp(0f, 16.dp.toPx(), progress) }
                 val stridePx = pageWidthPx * scale + gapPx
 
                 fun toggleBrowse() {
@@ -184,32 +183,33 @@ fun ReaderRoute(
                 fun settlePageOffset() {
                     scope.launch {
                         val current = pageOffset.value
-                        // Max one page per gesture; velocity bias for fling feel.
-                        val velocityBias = (dragVelocity / pageWidthPx).coerceIn(-0.45f, 0.45f)
-                        val target = (current + velocityBias).roundToInt().toFloat()
-                            .coerceIn(
-                                if (settledPage <= 0) 0f else -1f,
-                                if (settledPage >= total - 1) 0f else 1f,
-                            )
+                        val velocityBias = (-dragVelocity / pageWidthPx).coerceIn(-0.45f, 0.45f)
+                        val lo = if (settledPage <= 0) 0f else -1f
+                        val hi = if (settledPage >= total - 1) 0f else 1f
+                        val target = (current + velocityBias).roundToInt().toFloat().coerceIn(lo, hi)
+
                         pageOffset.animateTo(
                             target,
                             animationSpec = spring(
                                 dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = 500f,
+                                stiffness = 480f,
                             ),
                         )
                         if (target != 0f) {
-                            val next = (settledPage + target.toInt()).coerceIn(0, (total - 1).coerceAtLeast(0))
-                            pageOffset.snapTo(0f)
+                            val next = (settledPage + target.toInt())
+                                .coerceIn(0, (total - 1).coerceAtLeast(0))
                             if (next != settledPage) {
+                                suppressOffsetReset = 1f
+                                pageOffset.snapTo(0f)
                                 viewModel.onEvent(ReaderEvent.JumpToPage(next))
+                            } else {
+                                pageOffset.snapTo(0f)
                             }
                         }
                         dragVelocity = 0f
                     }
                 }
 
-                // Stage: only prev / current / next are ever composed.
                 if (total <= 0) {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                     return@BoxWithConstraints
@@ -222,7 +222,6 @@ fun ReaderRoute(
                             detectTapGestures { point ->
                                 val progress = progressState.value
                                 if (progress < 0.4f) {
-                                    // Immersion: left / centre / right zones.
                                     when {
                                         point.x < size.width * 0.30f -> {
                                             if (settledPage > 0) {
@@ -237,9 +236,10 @@ fun ReaderRoute(
                                         else -> toggleBrowse()
                                     }
                                 } else {
-                                    val relativeX = (point.x - size.width / 2f) / stridePx - pageOffset.value
+                                    val relativeX =
+                                        (point.x - size.width / 2f) / stridePx + pageOffset.value
                                     when {
-                                        relativeX < -0.4f && settledPage > 0 -> {
+                                        relativeX < -0.35f && settledPage > 0 -> {
                                             viewModel.onEvent(ReaderEvent.JumpToPage(settledPage - 1))
                                             scope.launch {
                                                 browseProgress.animateTo(
@@ -251,7 +251,7 @@ fun ReaderRoute(
                                                 )
                                             }
                                         }
-                                        relativeX > 0.4f && settledPage < total - 1 -> {
+                                        relativeX > 0.35f && settledPage < total - 1 -> {
                                             viewModel.onEvent(ReaderEvent.JumpToPage(settledPage + 1))
                                             scope.launch {
                                                 browseProgress.animateTo(
@@ -276,16 +276,17 @@ fun ReaderRoute(
                                     val dx = amount.x
                                     dragVelocity = dx * 60f
                                     scope.launch {
-                                        val next = pageOffset.value + dx / pageWidthPx
+                                        // Finger left (dx < 0) → pageOffset increases → content moves left.
+                                        val next = pageOffset.value - dx / pageWidthPx
                                         val clamped = when {
-                                            settledPage <= 0 && next > 0f -> next * 0.25f
-                                            settledPage >= total - 1 && next < 0f -> next * 0.25f
+                                            settledPage <= 0 && next < 0f -> next * 0.25f
+                                            settledPage >= total - 1 && next > 0f -> next * 0.25f
                                             else -> next.coerceIn(-1.15f, 1.15f)
                                         }
                                         pageOffset.snapTo(clamped)
                                         val progressNow = progressState.value
-                                        if (progressNow < 1f && abs(pageOffset.value) > 0.08f) {
-                                            val open = (abs(pageOffset.value) * 1.6f).coerceAtMost(1f)
+                                        if (progressNow < 1f && abs(pageOffset.value) > 0.06f) {
+                                            val open = (abs(pageOffset.value) * 1.8f).coerceAtMost(1f)
                                             if (open > browseProgress.value) {
                                                 browseProgress.snapTo(open)
                                             }
@@ -294,17 +295,32 @@ fun ReaderRoute(
                                 },
                                 onDragEnd = {
                                     val progress = progressState.value
-                                    if (progress < 0.35f && abs(pageOffset.value) < 0.12f) {
+                                    if (progress < 0.35f && abs(pageOffset.value) < 0.15f) {
                                         scope.launch {
-                                            val threshold = 0.12f
                                             when {
-                                                pageOffset.value < -threshold && settledPage < total - 1 -> {
+                                                pageOffset.value > 0.12f && settledPage < total - 1 -> {
+                                                    suppressOffsetReset = 1f
                                                     pageOffset.snapTo(0f)
                                                     viewModel.onEvent(ReaderEvent.JumpToPage(settledPage + 1))
+                                                    browseProgress.animateTo(
+                                                        0f,
+                                                        animationSpec = spring(
+                                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                                            stiffness = 420f,
+                                                        ),
+                                                    )
                                                 }
-                                                pageOffset.value > threshold && settledPage > 0 -> {
+                                                pageOffset.value < -0.12f && settledPage > 0 -> {
+                                                    suppressOffsetReset = 1f
                                                     pageOffset.snapTo(0f)
                                                     viewModel.onEvent(ReaderEvent.JumpToPage(settledPage - 1))
+                                                    browseProgress.animateTo(
+                                                        0f,
+                                                        animationSpec = spring(
+                                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                                            stiffness = 420f,
+                                                        ),
+                                                    )
                                                 }
                                                 else -> {
                                                     pageOffset.animateTo(
@@ -362,8 +378,8 @@ fun ReaderRoute(
                     pagesToShow.forEach { page ->
                         val relative = (page - settledPage).toFloat() - pageOffset.value
                         val translationX = relative * stridePx
-                        val pageScale = scale * lerp(1f, 0.97f, abs(relative).coerceAtMost(1f))
-                        val elevation = lerp(8f, 0f, abs(relative).coerceAtMost(1f)) * progress
+                        val pageScale = scale
+                        val elevation = if (progress > 0.05f) 6f else 0f
 
                         ReaderPageCard(
                             page = page,
@@ -378,7 +394,7 @@ fun ReaderRoute(
                                     this.scaleY = pageScale
                                     this.translationX = translationX
                                     this.shadowElevation = elevation
-                                    this.shape = RoundedCornerShape(lerp(0f, 8f, progress).dp)
+                                    this.shape = RoundedCornerShape(lerp(0f, 10f, progress).dp)
                                     this.clip = progress > 0.05f
                                 }
                                 .zIndex(10f - abs(relative))
@@ -573,12 +589,12 @@ fun ReaderRoute(
             onDismissRequest = { viewModel.onEvent(ReaderEvent.ToggleSearch) },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
+            Text(
+                "搜索",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp),
+            )
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text(
-                    "搜索",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(vertical = 8.dp),
-                )
                 OutlinedTextField(
                     value = state.searchQuery,
                     onValueChange = { viewModel.onEvent(ReaderEvent.Search(it)) },
@@ -636,10 +652,12 @@ private fun ReaderPageCard(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
-        androidx.compose.runtime.key(page, revision) {
-            PageCanvas(background = background, modifier = Modifier.fillMaxSize()) { canvas ->
-                drawPage(page, canvas)
-            }
+        PageCanvas(
+            background = background,
+            revision = revision,
+            modifier = Modifier.fillMaxSize(),
+        ) { canvas ->
+            drawPage(page, canvas)
         }
     }
 }
