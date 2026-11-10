@@ -44,7 +44,7 @@ class ReadiumEpubBookSource private constructor(
         return BookMetadata(
             title = metadata.title?.takeIf(String::isNotBlank)
                 ?: displayName.substringBeforeLast('.'),
-            author = null,
+            author = metadata.authors.firstOrNull()?.name?.takeIf(String::isNotBlank),
             language = metadata.languages.firstOrNull(),
             coverHref = publication.linkWithRel("cover")?.href?.toString(),
         )
@@ -67,7 +67,7 @@ class ReadiumEpubBookSource private constructor(
         }
         val xhtml = decodeXhtml(bytes)
         val blocks = XhtmlToBlocks.parse(xhtml, href)
-        val title = tocEntries.firstOrNull { it.locator.chapter == index }?.title
+        val title = findTocTitle(tocEntries, index)
             ?: href.substringAfterLast('/').substringBeforeLast('.')
         return Chapter(index = index, title = title, blocks = blocks)
     }
@@ -93,15 +93,29 @@ class ReadiumEpubBookSource private constructor(
         publication.close()
     }
 
+    private fun findTocTitle(entries: List<TocEntry>, chapterIndex: Int): String? {
+        for (entry in entries) {
+            if (entry.locator.chapter == chapterIndex) return entry.title
+            findTocTitle(entry.children, chapterIndex)?.let { return it }
+        }
+        return null
+    }
+
     private fun Link.toTocEntry(): TocEntry? {
         val chapterIndex = readingOrder.indexOfFirst {
             normalizeHref(it.href.toString()) == normalizeHref(href.toString())
         }
         val children = children.mapNotNull { it.toTocEntry() }
         if (chapterIndex < 0 && children.isEmpty()) return null
+        // Section links are often containers rather than reading-order resources.
+        // Point them at their first readable descendant instead of silently mapping
+        // every such section to chapter zero.
+        val locatorChapter = chapterIndex.takeIf { it >= 0 }
+            ?: children.firstOrNull()?.locator?.chapter
+            ?: return null
         return TocEntry(
             title = title?.takeIf(String::isNotBlank) ?: href.toString().substringAfterLast('/'),
-            locator = Locator(chapter = chapterIndex.coerceAtLeast(0), offset = 0),
+            locator = Locator(chapter = locatorChapter, offset = 0),
             children = children,
         )
     }
