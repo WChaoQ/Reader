@@ -11,7 +11,7 @@ class ReaderModelContractTest {
 
         assertEquals(2, locator.chapter)
         assertEquals(15, locator.offset)
-        assertEquals(0.5f, locator.progression)
+        assertEquals(0.5f, locator.progression, 0f)
     }
 
     @Test
