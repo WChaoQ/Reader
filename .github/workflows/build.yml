@@ -68,6 +68,10 @@ jobs:
         if: inputs.build_type == 'debug'
         run: ./gradlew :engine:render:testDebugUnitTest --stacktrace --no-daemon
 
+      - name: Run Markdown Engine unit tests
+        if: inputs.build_type == 'debug'
+        run: ./gradlew :engine:format-markdown:testDebugUnitTest --stacktrace --no-daemon
+
       - name: Run EPUB Engine unit tests
         if: inputs.build_type == 'debug'
         run: ./gradlew :engine:format-epub:testDebugUnitTest --stacktrace --no-daemon
