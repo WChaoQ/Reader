@@ -30,5 +30,8 @@ interface ReaderEngine {
 
     fun pageText(pageIndex: Int): String
 
+    /** Wait until a page is ready to present; reflow engines are ready synchronously. */
+    suspend fun awaitPage(pageIndex: Int): Boolean = true
+
     fun close()
 }
