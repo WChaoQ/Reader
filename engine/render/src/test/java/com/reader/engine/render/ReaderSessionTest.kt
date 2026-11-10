@@ -3,6 +3,7 @@ package com.reader.engine.render
 import android.graphics.Canvas
 import com.reader.core.model.Locator
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,6 +32,19 @@ class ReaderSessionTest {
         session.close()
 
         assertTrue(taskJob.isCancelled)
+    }
+
+    @Test
+    fun closeAndJoinWaitsForEngineShutdownAndCancelsTaskJob() = runBlocking {
+        val engine = FakeReaderEngine()
+        val taskJob = Job()
+        val session = ReaderSession(engine, taskJob = taskJob)
+
+        session.closeAndJoin()
+
+        assertTrue(session.isClosed)
+        assertTrue(taskJob.isCancelled)
+        assertEquals(1, engine.closeCalls)
     }
 
     @Test
