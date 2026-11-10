@@ -17,6 +17,7 @@ import java.io.InputStream
 class PdfBookSource(private val document: DocumentHandle) : BookSource {
     private val descriptor: ParcelFileDescriptor = document.openSeekableFileDescriptor()
     private val rendererLock = Any()
+    private var closed = false
     private val renderer = try {
         PdfRenderer(descriptor)
     } catch (failure: Throwable) {
@@ -25,19 +26,24 @@ class PdfBookSource(private val document: DocumentHandle) : BookSource {
     }
 
     override val format = BookFormat.PDF
-    override val chapterCount get() = synchronized(rendererLock) { renderer.pageCount }
+    override val chapterCount get() = synchronized(rendererLock) {
+        check(!closed) { "PDF source is already closed" }
+        renderer.pageCount
+    }
 
     override suspend fun metadata() = BookMetadata(
         title = document.displayName.substringBeforeLast('.').ifBlank { "PDF" },
     )
 
     override suspend fun toc(): List<TocEntry> = synchronized(rendererLock) {
+        check(!closed) { "PDF source is already closed" }
         (0 until renderer.pageCount).map { page ->
             TocEntry("第 ${page + 1} 页", Locator(page, 0))
         }
     }
 
     override suspend fun loadChapter(index: Int): Chapter = synchronized(rendererLock) {
+        check(!closed) { "PDF source is already closed" }
         require(index in 0 until renderer.pageCount)
         Chapter(index, "第 ${index + 1} 页", listOf(Block.Paragraph("")))
     }
@@ -45,7 +51,12 @@ class PdfBookSource(private val document: DocumentHandle) : BookSource {
     override suspend fun openResource(ref: ResourceRef): InputStream =
         error("PDF has no external resources")
 
-    override fun close() = synchronized(rendererLock) { renderer.close() }
+    override fun close() = synchronized(rendererLock) {
+        if (!closed) {
+            closed = true
+            renderer.close()
+        }
+    }
 
     companion object {
         fun open(document: DocumentHandle) = PdfBookSource(document)
