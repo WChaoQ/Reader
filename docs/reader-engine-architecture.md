@@ -345,6 +345,25 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 7. 逐步将 Feature 对具体引擎类的认知收敛到 Session/Engine Facade；不为此一次性重写 UI。
 8. 用真实设备和 fixture 建立首屏、翻页、内存与稳定性基线。
 
+### 13.1 架构落地记录
+
+**2026-11-11：Session 生命周期第一步**
+
+已完成：
+- 新增 `:engine:render` 的 `ReaderSession`，作为单个打开文档的生命周期门面。
+- ReaderViewModel 将当前 ReaderEngine 与可选 BookSource 绑定到同一个 Session；全文搜索通过 Session 访问 BookSource。
+- Session 以原子状态保证 close 幂等，并统一委托 ReaderEngine 释放底层资源。
+- 明确当前资源所有权：ReflowEngine 负责关闭其 BookSource；FixedEngine 负责关闭 PdfRenderer / ParcelFileDescriptor。Session 不重复关闭 Source 或 PFD。
+- 新增 Session close 幂等性与关闭后访问保护测试。
+
+尚未完成：
+- Session 创建仍由 ReaderViewModel 组装，尚未收敛到唯一 ReaderSessionFactory。
+- 打开失败的部分初始化回滚、Session 任务作用域和统一 generation 隔离仍需继续治理。
+- ReaderViewModel 仍保留 engine/source 兼容字段；后续应在不改变 UI 行为的前提下收敛为只持有 Session。
+- 本轮没有替换 Readium、PdfRenderer、StaticLayout，也没有改变现有阅读交互。
+
+本轮是阶段 B 的第一步，不代表 Session 生命周期治理已经全部验收。
+
 ## 14. 实施顺序（必须逐阶段验收）
 
 **阶段 A：冻结协议**
