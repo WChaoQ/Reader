@@ -373,9 +373,11 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 
 ### 13.1 架构落地记录
 
-**2026-11-11：阶段 B — Session 生命周期与创建边界**
+**2026-11-11：阶段 B — Session 生命周期与创建边界（现状记录，暂不验收）**
 
-已完成：
+> 阶段 B 的部分代码在严格顺序确认前已提前写入分支。本记录仅说明现状；必须先完成阶段 A 的构建、契约测试和数据兼容验收，再正式验收阶段 B。不得跳过阶段 A 直接进入阶段 C。
+
+已写入：
 - 新增 `:engine:render` 的 `ReaderSession`，以原子状态保证关闭幂等；关闭后拒绝读取 Engine / Source 或提交新任务。
 - 新增 `ReaderSessionFactory`，集中负责 PDF / Reflow 引擎选择、资源获取、初始化和部分初始化失败回滚；ReaderViewModel 不再直接构造格式引擎。
 - Session 持有当前 Engine、可选 BookSource、TOC 快照和专属 SupervisorJob；ReflowEngine 使用 Session 专属任务作用域，不再使用 ViewModel 的全局作用域。
