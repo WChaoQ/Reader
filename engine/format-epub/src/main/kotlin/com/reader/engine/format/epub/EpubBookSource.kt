@@ -109,10 +109,11 @@ class EpubBookSource(
     }
 
     private fun decodeXhtml(bytes: ByteArray): String {
-        // Prefer XML declaration charset; fall back to UTF-8 with BOM handling.
+        // XML declarations use ordinary whitespace around '='; this raw regex must
+        // contain single backslashes so \s is interpreted by the regex engine.
         val head = bytes.copyOfRange(0, minOf(bytes.size, 256)).toString(Charsets.ISO_8859_1)
         val charsetName = Regex(
-            """encoding\\s*=\\s*['\"]([A-Za-z0-9_\\-]+)['\"]""",
+            """encoding\s*=\s*['"]([A-Za-z0-9_-]+)['"]""",
             RegexOption.IGNORE_CASE,
         ).find(head)?.groupValues?.get(1)
         val charset = runCatching {
