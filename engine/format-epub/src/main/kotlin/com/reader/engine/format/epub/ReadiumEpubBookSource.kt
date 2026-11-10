@@ -1,6 +1,7 @@
 package com.reader.engine.format.epub
 
 import android.content.Context
+import android.net.Uri
 import com.reader.core.model.BookFormat
 import com.reader.core.model.BookMetadata
 import com.reader.core.model.Chapter
@@ -117,7 +118,7 @@ class ReadiumEpubBookSource private constructor(
     }
 
     private fun normalizeHref(value: String): String =
-        value.substringBefore('#').substringBefore('?').removePrefix("/")
+        Uri.decode(value.substringBefore('#').substringBefore('?').removePrefix("/"))
 
     companion object {
         suspend fun open(context: Context, document: DocumentHandle): ReadiumEpubBookSource {
@@ -139,11 +140,16 @@ class ReadiumEpubBookSource private constructor(
                 .getOrElse { error ->
                     throw IOException("无法读取 EPUB 文件：$error")
                 }
-            val publication = opener.open(asset, allowUserInteraction = false)
-                .getOrElse { error ->
-                    asset.close()
-                    throw IOException("EPUB 解析失败：$error")
-                }
+            val openResult = try {
+                opener.open(asset, allowUserInteraction = false)
+            } catch (failure: Throwable) {
+                asset.close()
+                throw failure
+            }
+            val publication = openResult.getOrElse { error ->
+                asset.close()
+                throw IOException("EPUB 解析失败：$error")
+            }
 
             if (publication.readingOrder.isEmpty()) {
                 publication.close()
