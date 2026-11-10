@@ -114,11 +114,23 @@ fun ReaderRoute(
         else -> Color(0xFFEDEDF2)
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(stageBackground),
     ) {
+        // Measure the real viewport while the loading state is still visible.
+        // This prevents the reader from first opening with the fallback 1080×1920
+        // layout and then closing/reopening as soon as the page becomes visible.
+        LaunchedEffect(maxWidth, maxHeight, density.density, density.fontScale) {
+            val widthPx = with(density) { maxWidth.roundToPx() }
+            val heightPx = with(density) { maxHeight.roundToPx() }
+            viewModel.onViewportSized(
+                widthPx = widthPx,
+                heightPx = heightPx,
+                fontScalePxPerSp = density.density * density.fontScale,
+            )
+        }
         when {
             state.error != null -> Text(
                 text = state.error!!,
@@ -132,16 +144,6 @@ fun ReaderRoute(
                 val pageWidth = maxWidth
                 val pageHeight = maxHeight
                 val pageWidthPx = with(density) { pageWidth.toPx() }
-
-                LaunchedEffect(pageWidth, pageHeight, density.density, density.fontScale) {
-                    val w = with(density) { pageWidth.roundToPx() }
-                    val h = with(density) { pageHeight.roundToPx() }
-                    viewModel.onViewportSized(
-                        widthPx = w,
-                        heightPx = h,
-                        fontScalePxPerSp = density.density * density.fontScale,
-                    )
-                }
 
                 val total = state.pageCount.available
                 val settledPage = state.currentPage
