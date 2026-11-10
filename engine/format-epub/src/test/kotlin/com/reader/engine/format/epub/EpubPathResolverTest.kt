@@ -41,7 +41,7 @@ class EpubPathResolverTest {
     fun normalizesDotSegmentsAndSeparators() {
         assertEquals(
             "OPS/Images/cover.jpg",
-            EpubPathResolver.resolve("OPS/Text/chapter.xhtml", "..\\Images\\./cover.jpg"),
+            EpubPathResolver.resolve("OPS/Text/chapter.xhtml", """..\\Images\\./cover.jpg"""),
         )
     }
 }
