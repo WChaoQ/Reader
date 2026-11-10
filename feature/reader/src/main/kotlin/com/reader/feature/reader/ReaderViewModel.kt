@@ -401,21 +401,24 @@ class ReaderViewModel @Inject constructor(
             heldSource = null
             throw cancelled
         } catch (security: SecurityException) {
-            if (engine != null) engine?.close() else heldSource?.close()
+            session?.close() ?: if (engine != null) engine?.close() else heldSource?.close()
+            session = null
             engine = null
             heldSource = null
             _state.update {
                 it.copy(isLoading = false, error = "无法访问原文件，请重新从系统文件选择器打开")
             }
         } catch (missing: java.io.FileNotFoundException) {
-            if (engine != null) engine?.close() else heldSource?.close()
+            session?.close() ?: if (engine != null) engine?.close() else heldSource?.close()
+            session = null
             engine = null
             heldSource = null
             _state.update {
                 it.copy(isLoading = false, error = "原文件已移动或删除，请重新选择文档")
             }
         } catch (t: Throwable) {
-            if (engine != null) engine?.close() else heldSource?.close()
+            session?.close() ?: if (engine != null) engine?.close() else heldSource?.close()
+            session = null
             engine = null
             heldSource = null
             _state.update { it.copy(isLoading = false, error = t.message ?: "打开失败") }
