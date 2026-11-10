@@ -14,6 +14,8 @@ import java.io.IOException
 import java.io.InputStream
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.name
+import org.readium.r2.shared.publication.title
 import org.readium.r2.shared.util.AbsoluteUrl
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.http.DefaultHttpClient
@@ -72,7 +74,7 @@ class ReadiumEpubBookSource private constructor(
 
     override suspend fun openResource(ref: ResourceRef): InputStream {
         val target = normalizeHref(ref.href)
-        val link = (readingOrder + publication.resources + publication.links + publication.images)
+        val link = (readingOrder + publication.resources + publication.links)
             .firstOrNull { normalizeHref(it.href.toString()) == target }
             ?: throw IOException("EPUB resource not found: ${ref.href}")
         val resource = publication.get(link)
