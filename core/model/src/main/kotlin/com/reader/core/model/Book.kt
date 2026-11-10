@@ -16,12 +16,25 @@ data class Book(
     val sourceUri: String? = null,
 )
 
-/** Unified locator. Reflow formats use chapter + offset; PDF uses chapter=page, offset=0 */
+/**
+ * Stable format-neutral reading position. Reflow uses zero-based chapter + UTF-16
+ * text offset; fixed-layout formats use zero-based page in [chapter] and offset 0.
+ * [progression] is an optional normalized fallback in the inclusive range 0..1;
+ * it must never replace chapter/offset as the primary identity.
+ */
 data class Locator(
     val chapter: Int,
     val offset: Int,
     val progression: Float = 0f,
-)
+) {
+    init {
+        require(chapter >= 0) { "Locator chapter/page index must be zero-based and non-negative" }
+        require(offset >= 0) { "Locator offset must be non-negative" }
+        require(progression.isFinite() && progression in 0f..1f) {
+            "Locator progression must be finite and normalized to 0..1"
+        }
+    }
+}
 
 data class BookMetadata(
     val title: String,
