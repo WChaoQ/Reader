@@ -13,6 +13,7 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.LruCache
 import com.reader.core.model.Locator
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -51,6 +52,7 @@ class FixedEngine(
     private val renderScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val renderJobs = ConcurrentHashMap<Int, Job>()
+    private val pageWaiters = ConcurrentHashMap<Int, CompletableDeferred<Boolean>>()
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var closed = false
 
@@ -153,11 +155,41 @@ class FixedEngine(
         canvas.drawBitmap(bitmap, null, RectF(left, top, left + width, top + height), paint)
     }
 
+    /**
+     * Suspends until the requested page bitmap is in cache. The reader can keep showing
+     * the previous page until this returns, avoiding a blank frame during page changes.
+     */
+    suspend fun awaitPage(pageIndex: Int): Boolean {
+        if (closed || pageIndex !in 0 until pageTotal) return false
+        synchronized(bitmapCache) {
+            val cached = bitmapCache.get(pageIndex)
+            if (cached != null && !cached.isRecycled) return true
+        }
+        val waiter = pageWaiters.computeIfAbsent(pageIndex) { CompletableDeferred() }
+        // Close the race where a render finishes between the first cache check and
+        // waiter registration.
+        synchronized(bitmapCache) {
+            val cached = bitmapCache.get(pageIndex)
+            if (cached != null && !cached.isRecycled) {
+                pageWaiters.remove(pageIndex)?.complete(true)
+                return true
+            }
+        }
+        requestPage(pageIndex)
+        return waiter.await()
+    }
+
     private fun requestPage(pageIndex: Int) {
-        if (closed || pageIndex !in 0 until pageTotal) return
+        if (closed || pageIndex !in 0 until pageTotal) {
+            pageWaiters.remove(pageIndex)?.complete(false)
+            return
+        }
         synchronized(bitmapCache) {
             val existing = bitmapCache.get(pageIndex)
-            if (existing != null && !existing.isRecycled) return
+            if (existing != null && !existing.isRecycled) {
+                pageWaiters.remove(pageIndex)?.complete(true)
+                return
+            }
         }
         if (renderJobs.containsKey(pageIndex)) return
 
@@ -171,13 +203,16 @@ class FixedEngine(
                     if (pageIndex == initialPageIndex.coerceIn(0, (pageTotal - 1).coerceAtLeast(0))) {
                         _ready.value = true
                     }
+                    pageWaiters.remove(pageIndex)?.complete(true)
                     mainHandler.post {
                         if (!closed) onPageRendered()
                     }
                 } else {
                     bitmap?.recycle()
+                    pageWaiters.remove(pageIndex)?.complete(false)
                 }
             } catch (_: Exception) {
+                pageWaiters.remove(pageIndex)?.complete(false)
             } finally {
                 renderJobs.remove(pageIndex)
             }
@@ -226,6 +261,8 @@ class FixedEngine(
         renderJobs.values.forEach { it.cancel() }
         renderJobs.clear()
         renderScope.cancel()
+        pageWaiters.values.forEach { it.complete(false) }
+        pageWaiters.clear()
         mainHandler.removeCallbacksAndMessages(null)
         synchronized(bitmapCache) {
             bitmapCache.evictAll()
