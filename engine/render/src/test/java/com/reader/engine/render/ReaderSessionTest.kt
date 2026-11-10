@@ -2,7 +2,9 @@ package com.reader.engine.render
 
 import android.graphics.Canvas
 import com.reader.core.model.Locator
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
@@ -49,6 +51,41 @@ class ReaderSessionTest {
     }
 
     @Test
+    fun closeWaitsForSessionTasksBeforeClosingEngine() = runBlocking {
+        val taskFinished = CompletableDeferred<Unit>()
+        val engine = FakeReaderEngine {
+            assertTrue("Session task must finish before engine cleanup", taskFinished.isCompleted)
+        }
+        val session = ReaderSession(engine)
+
+        session.launchTask {
+            try {
+                awaitCancellation()
+            } finally {
+                taskFinished.complete(Unit)
+            }
+        }
+
+        session.closeAndJoin()
+
+        assertTrue(taskFinished.isCompleted)
+        assertEquals(1, engine.closeCalls)
+    }
+
+    @Test
+    fun launchTaskRejectsClosedSession() {
+        val session = ReaderSession(FakeReaderEngine())
+        session.close()
+
+        try {
+            session.launchTask { }
+            throw AssertionError("Expected task launch to be rejected")
+        } catch (_: IllegalStateException) {
+            // Expected.
+        }
+    }
+
+    @Test
     fun engineCannotBeAccessedAfterClose() {
         val session = ReaderSession(FakeReaderEngine())
         session.close()
@@ -76,7 +113,9 @@ class ReaderSessionTest {
         }
     }
 
-    private class FakeReaderEngine : ReaderEngine {
+    private class FakeReaderEngine(
+        private val onClose: () -> Unit = {},
+    ) : ReaderEngine {
         override val pageCount = MutableStateFlow(PageCountInfo(exact = 0))
         override val ready = MutableStateFlow(false)
         var closeCalls: Int = 0
@@ -88,6 +127,7 @@ class ReaderSessionTest {
         override fun pageText(pageIndex: Int) = ""
         override fun close() {
             closeCalls++
+            onClose()
         }
     }
 }
