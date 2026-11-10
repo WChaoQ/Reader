@@ -35,7 +35,7 @@ class BookmarkRepository @Inject constructor(
     suspend fun delete(id: String) = dao.delete(id)
 }
 
-private fun BookmarkEntity.toModel() = Bookmark(
+internal fun BookmarkEntity.toModel() = Bookmark(
     id = id,
     bookId = bookId,
     locator = Locator(chapter = chapter.coerceAtLeast(0), offset = offset.coerceAtLeast(0)),
