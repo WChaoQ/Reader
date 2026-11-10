@@ -49,7 +49,7 @@ class PdfBookSource(private val document: DocumentHandle) : BookSource {
     }
 
     override suspend fun openResource(ref: ResourceRef): InputStream =
-        error("PDF has no external resources")
+        throw UnsupportedOperationException("PDF has no external resources")
 
     override fun close() = synchronized(rendererLock) {
         if (!closed) {
