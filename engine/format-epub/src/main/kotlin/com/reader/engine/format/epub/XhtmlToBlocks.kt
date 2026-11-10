@@ -67,7 +67,7 @@ object XhtmlToBlocks {
                                     ?: parser.getAttributeValue(null, "href")
                                 val alt = parser.getAttributeValue(null, "alt")
                                 if (!src.isNullOrEmpty()) {
-                                    val ref = ZipSafe.resolveHref(chapterBasePath, src)
+                                    val ref = EpubPathResolver.resolve(chapterBasePath, src)
                                     blocks += Block.Image(ResourceRef(ref), alt)
                                 }
                             }
