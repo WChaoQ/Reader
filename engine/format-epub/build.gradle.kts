@@ -11,6 +11,7 @@ dependencies {
     implementation(project(":engine:format-api"))
     implementation(project(":core:model"))
     implementation(libs.kotlinx.coroutines.android)
+    testImplementation(libs.junit)
 
     // Keep Readium entirely inside this adapter module.
     implementation(libs.readium.shared)
