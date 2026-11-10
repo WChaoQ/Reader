@@ -36,6 +36,7 @@ class FixedEngine(
     private val pfd: ParcelFileDescriptor,
     private val pageWidthPx: Int,
     private val theme: String = "day",
+    private val initialPageIndex: Int = 0,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val onPageRendered: () -> Unit = {},
 ) : ReaderEngine {
@@ -96,13 +97,17 @@ class FixedEngine(
     private val _pageCount = kotlinx.coroutines.flow.MutableStateFlow(PageCountInfo(exact = pageTotal))
     override val pageCount: kotlinx.coroutines.flow.StateFlow<PageCountInfo> = _pageCount
 
-    private val _ready = kotlinx.coroutines.flow.MutableStateFlow(true)
+    // Ready means the requested opening page has a completed bitmap, not merely that
+    // PdfRenderer was constructed. The UI can safely leave its loading state then.
+    private val _ready = kotlinx.coroutines.flow.MutableStateFlow(false)
     override val ready: kotlinx.coroutines.flow.StateFlow<Boolean> = _ready
 
     init {
         if (pageTotal > 0) {
-            requestPage(0)
-            if (pageTotal > 1) requestPage(1)
+            val openingPage = initialPageIndex.coerceIn(0, pageTotal - 1)
+            requestPage(openingPage)
+            if (openingPage > 0) requestPage(openingPage - 1)
+            if (openingPage + 1 < pageTotal) requestPage(openingPage + 1)
         }
     }
 
@@ -162,6 +167,9 @@ class FixedEngine(
                 if (bitmap != null && !closed) {
                     synchronized(bitmapCache) {
                         bitmapCache.put(pageIndex, bitmap)
+                    }
+                    if (pageIndex == initialPageIndex.coerceIn(0, (pageTotal - 1).coerceAtLeast(0))) {
+                        _ready.value = true
                     }
                     mainHandler.post {
                         if (!closed) onPageRendered()
