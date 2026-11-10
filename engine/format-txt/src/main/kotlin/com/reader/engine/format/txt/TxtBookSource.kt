@@ -44,7 +44,7 @@ class TxtBookSource(
     }
 
     override suspend fun openResource(ref: ResourceRef): InputStream =
-        error("TXT has no external resources")
+        throw UnsupportedOperationException("TXT has no external resources")
 
     override fun close() = Unit
 
