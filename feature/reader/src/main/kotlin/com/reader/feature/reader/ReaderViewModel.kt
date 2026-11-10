@@ -16,6 +16,7 @@ import com.reader.core.model.Locator
 import com.reader.core.model.TocEntry
 import com.reader.engine.layout.LayoutConfig
 import com.reader.engine.render.PageCountInfo
+import com.reader.engine.render.ReaderCapability
 import com.reader.engine.render.ReaderEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -213,8 +214,13 @@ class ReaderViewModel @Inject constructor(
             return
         }
         val activeSession = session
-        val source = activeSession?.source
-        if (activeSession == null || source == null || _state.value.format == BookFormat.PDF) {
+        if (activeSession == null ||
+            ReaderCapability.FULL_TEXT_SEARCH !in activeSession.engine.capabilities
+        ) {
+            _state.update { it.copy(searching = false, snackbar = "当前格式暂不支持全文搜索") }
+            return
+        }
+        val source = activeSession.source ?: run {
             _state.update { it.copy(searching = false, snackbar = "当前格式暂不支持全文搜索") }
             return
         }
