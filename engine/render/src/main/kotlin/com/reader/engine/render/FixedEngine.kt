@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.sqrt
 
 /**
@@ -55,6 +56,8 @@ class FixedEngine(
     private val pageWaiters = ConcurrentHashMap<Int, CompletableDeferred<Boolean>>()
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var closed = false
+    private val closeStarted = AtomicBoolean(false)
+    private val closeCompleted = CompletableDeferred<Unit>()
 
     private val bitmapCache = object : LruCache<Int, Bitmap>(MAX_CACHE_KB) {
         override fun sizeOf(key: Int, value: Bitmap): Int =
@@ -262,7 +265,7 @@ class FixedEngine(
     override fun pageText(pageIndex: Int): String = ""
 
     override fun close() {
-        if (closed) return
+        if (!closeStarted.compareAndSet(false, true)) return
         closed = true
         renderJobs.values.forEach { it.cancel() }
         renderJobs.clear()
@@ -274,12 +277,23 @@ class FixedEngine(
             bitmapCache.evictAll()
         }
         cleanupScope.launch {
-            mutex.withLock {
-                runCatching { renderer.close() }
-                runCatching { pfd.close() }
+            try {
+                mutex.withLock {
+                    runCatching { renderer.close() }
+                    runCatching { pfd.close() }
+                }
+                closeCompleted.complete(Unit)
+            } catch (failure: Throwable) {
+                closeCompleted.completeExceptionally(failure)
+            } finally {
+                cleanupScope.cancel()
             }
-            cleanupScope.cancel()
         }
+    }
+
+    override suspend fun closeAndJoin() {
+        close()
+        closeCompleted.await()
     }
 
     private companion object {
