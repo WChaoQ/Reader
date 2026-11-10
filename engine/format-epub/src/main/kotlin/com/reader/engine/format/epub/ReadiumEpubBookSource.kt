@@ -55,8 +55,13 @@ class ReadiumEpubBookSource private constructor(
         require(index in readingOrder.indices) { "Chapter out of range: $index" }
         val link = readingOrder[index]
         val href = link.href.toString()
-        val resource = publication.get(link).getOrThrow()
-        val bytes = resource.use { it.read().getOrThrow() }
+        val resource = publication.get(link)
+            ?: throw IOException("Readium cannot resolve EPUB chapter: $href")
+        val bytes = resource.use { chapterResource ->
+            chapterResource.read().getOrElse { error ->
+                throw IOException("Unable to read EPUB chapter $href: $error")
+            }
+        }
         val xhtml = decodeXhtml(bytes)
         val blocks = XhtmlToBlocks.parse(xhtml, href)
         val title = tocEntries.firstOrNull { it.locator.chapter == index }?.title
@@ -69,8 +74,13 @@ class ReadiumEpubBookSource private constructor(
         val link = (readingOrder + publication.resources + publication.links)
             .firstOrNull { normalizeHref(it.href.toString()) == target }
             ?: throw IOException("EPUB resource not found: ${ref.href}")
-        val resource = publication.get(link).getOrThrow()
-        val bytes = resource.use { it.read().getOrThrow() }
+        val resource = publication.get(link)
+            ?: throw IOException("Readium cannot resolve EPUB resource: " + ref.href)
+        val bytes = resource.use { contentResource ->
+            contentResource.read().getOrElse { error ->
+                throw IOException("Unable to read EPUB resource " + ref.href + ": $error")
+            }
+        }
         return ByteArrayInputStream(bytes)
     }
 
@@ -122,7 +132,9 @@ class ReadiumEpubBookSource private constructor(
             val opener = PublicationOpener(publicationParser = parser)
             val sourceUrl = AbsoluteUrl(document.uri.toString())
                 ?: throw IOException("无效的文档 URI：${document.uri}")
-            val asset = assetRetriever.retrieve(sourceUrl).getOrThrow()
+            val asset = assetRetriever.retrieve(sourceUrl).getOrElse { error ->
+                throw IOException("无法读取 EPUB 文件：$error")
+            }
             val openResult = try {
                 opener.open(asset, allowUserInteraction = false)
             } catch (failure: Throwable) {
@@ -130,7 +142,9 @@ class ReadiumEpubBookSource private constructor(
                 throw failure
             }
             val publication = try {
-                openResult.getOrThrow()
+                openResult.getOrElse { error ->
+                    throw IOException("EPUB 解析失败：$error")
+                }
             } catch (failure: Throwable) {
                 asset.close()
                 throw IOException("EPUB 解析失败：${failure.message}", failure)
