@@ -199,7 +199,11 @@ class ReaderViewModel @Inject constructor(
     private fun addBookmark() {
         val eng = engine ?: return
         val locator = currentLocator
-        val snippet = eng.pageText(_state.value.currentPage).take(120)
+        val snippet = if (ReaderCapability.PAGE_TEXT in eng.capabilities) {
+            eng.pageText(_state.value.currentPage).take(120)
+        } else {
+            ""
+        }
         viewModelScope.launch {
             bookmarkRepository.add(bookId, locator, snippet)
             _state.update { it.copy(snackbar = "已添加书签") }
