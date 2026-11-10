@@ -42,7 +42,7 @@ class ReadiumEpubBookSource private constructor(
     override suspend fun metadata(): BookMetadata {
         val metadata = publication.metadata
         return BookMetadata(
-            title = metadata.title.takeIf(String::isNotBlank)
+            title = metadata.title?.takeIf(String::isNotBlank)
                 ?: displayName.substringBeforeLast('.'),
             author = metadata.authors.map { it.name }.filter(String::isNotBlank)
                 .joinToString(", ").ifBlank { null },
@@ -133,7 +133,9 @@ class ReadiumEpubBookSource private constructor(
                 pdfFactory = null,
             )
             val opener = PublicationOpener(publicationParser = parser)
-            val asset = assetRetriever.retrieve(AbsoluteUrl(document.uri.toString()))
+            val sourceUrl = AbsoluteUrl(document.uri.toString())
+                ?: throw IOException("无效的文档 URI：${document.uri}")
+            val asset = assetRetriever.retrieve(sourceUrl)
                 .getOrElse { error ->
                     throw IOException("无法读取 EPUB 文件：$error")
                 }
