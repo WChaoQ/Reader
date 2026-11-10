@@ -17,6 +17,9 @@ data class PageCountInfo(
         require(exact == null || exact >= 0) { "Exact page count must be non-negative" }
         require(estimated >= 0) { "Estimated page count must be non-negative" }
         require(available >= 0) { "Available page count must be non-negative" }
+        require(exact != null || estimated >= available) {
+            "Estimated page count cannot be lower than available pages"
+        }
         require(exact == null || available <= exact) { "Available pages cannot exceed exact page count" }
     }
 }
