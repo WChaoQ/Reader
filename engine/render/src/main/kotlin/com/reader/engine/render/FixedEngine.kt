@@ -133,26 +133,32 @@ class FixedEngine(
         if (pageIndex > 0) requestPage(pageIndex - 1)
         if (pageIndex + 1 < pageTotal) requestPage(pageIndex + 1)
 
-        val bitmap = synchronized(bitmapCache) { bitmapCache.get(pageIndex) }
-        if (bitmap == null || bitmap.isRecycled) {
-            requestPage(pageIndex)
-            return
+        // Keep the cache lock for the complete draw operation. LruCache recycles an
+        // evicted bitmap in entryRemoved(); releasing the lock after get() allowed a
+        // background prefetch to recycle this bitmap while Canvas was still drawing it.
+        val drawn = synchronized(bitmapCache) {
+            val bitmap = bitmapCache.get(pageIndex)
+            if (bitmap == null || bitmap.isRecycled) {
+                false
+            } else {
+                paint.colorFilter = when (theme) {
+                    "night" -> nightFilter
+                    "sepia" -> sepiaFilter
+                    else -> null
+                }
+                val scale = minOf(
+                    canvas.width.toFloat() / bitmap.width.coerceAtLeast(1),
+                    canvas.height.toFloat() / bitmap.height.coerceAtLeast(1),
+                )
+                val width = bitmap.width * scale
+                val height = bitmap.height * scale
+                val left = (canvas.width - width) / 2f
+                val top = (canvas.height - height) / 2f
+                canvas.drawBitmap(bitmap, null, RectF(left, top, left + width, top + height), paint)
+                true
+            }
         }
-
-        paint.colorFilter = when (theme) {
-            "night" -> nightFilter
-            "sepia" -> sepiaFilter
-            else -> null
-        }
-        val scale = minOf(
-            canvas.width.toFloat() / bitmap.width.coerceAtLeast(1),
-            canvas.height.toFloat() / bitmap.height.coerceAtLeast(1),
-        )
-        val width = bitmap.width * scale
-        val height = bitmap.height * scale
-        val left = (canvas.width - width) / 2f
-        val top = (canvas.height - height) / 2f
-        canvas.drawBitmap(bitmap, null, RectF(left, top, left + width, top + height), paint)
+        if (!drawn) requestPage(pageIndex)
     }
 
     /**
