@@ -29,7 +29,7 @@ The feature layer depends on these project-owned contracts, not on Readium or An
 
 ### EPUB
 
-Use Readium Kotlin Toolkit 3.4.x behind the existing `FormatHandler` / `BookSource` boundary. Readium owns EPUB package parsing, metadata, reading order, navigation data, and publication resource access. The project continues to own:
+Use Readium Kotlin Toolkit 3.4.0 behind the existing `FormatHandler` / `BookSource` boundary. `ReadiumEpubBookSource` now opens the selected SAF URI through `AssetRetriever(ContentResolver, HttpClient)` and `PublicationOpener`. Readium owns EPUB package parsing, metadata, reading order, navigation data, and publication resource access. The project continues to own:
 
 - chapter-to-page pagination;
 - page cache and page rendering;
