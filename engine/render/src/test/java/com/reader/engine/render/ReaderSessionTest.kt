@@ -12,12 +12,13 @@ import org.junit.Test
 
 class ReaderSessionTest {
     @Test
-    fun closeIsIdempotentAndClosesEngineOnce() {
+    fun closeIsIdempotentAndClosesEngineOnce() = runBlocking {
         val engine = FakeReaderEngine()
         val session = ReaderSession(engine)
 
         session.close()
         session.close()
+        session.closeAndJoin()
 
         assertTrue(session.isClosed)
         assertEquals(1, engine.closeCalls)
