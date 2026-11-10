@@ -3,6 +3,7 @@ package com.reader.engine.render
 import com.reader.core.model.TocEntry
 import com.reader.engine.format.BookSource
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -33,5 +34,11 @@ class ReaderSession(
             taskJob?.cancel()
             engine.close()
         }
+    }
+
+    suspend fun closeAndJoin() {
+        close()
+        taskJob?.cancelAndJoin()
+        engine.closeAndJoin()
     }
 }
