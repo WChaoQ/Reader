@@ -82,6 +82,7 @@ class ReflowEngine(
                         rebuildPageIndex()
                         if (chapter.index == start.chapter) {
                             _ready.value = true
+                            onLayoutReady()
                         }
                     }
                     is PaginationEvent.Progress -> {
@@ -90,13 +91,18 @@ class ReflowEngine(
                         }
                         val estimated = (avg * source.chapterCount).toInt().coerceAtLeast(1)
                         val available = pageIndexSnapshot.size
-                        _pageCount.value = PageCountInfo(exact = null, estimated = maxOf(estimated, available), available = available)
+                        _pageCount.value = PageCountInfo(
+                            exact = null,
+                            estimated = maxOf(estimated, available),
+                            available = available,
+                        )
                     }
                     PaginationEvent.Completed -> {
                         rebuildPageIndex()
                         val available = pageIndexSnapshot.size
                         _pageCount.value = PageCountInfo(exact = available, available = available)
                         _ready.value = true
+                        onLayoutReady()
                     }
                 }
             }
@@ -115,7 +121,11 @@ class ReflowEngine(
             val exact = if (chapterPageCounts.size == source.chapterCount) rebuilt.size else null
             val average = chapterPageCounts.values.average().let { if (it.isNaN()) 1.0 else it }
             val estimated = (average * source.chapterCount).toInt().coerceAtLeast(rebuilt.size)
-            _pageCount.value = PageCountInfo(exact = exact, estimated = exact ?: estimated, available = rebuilt.size)
+            _pageCount.value = PageCountInfo(
+                exact = exact,
+                estimated = exact ?: estimated,
+                available = rebuilt.size,
+            )
         }
     }
 
@@ -227,13 +237,21 @@ class ReflowEngine(
         val index = pageIndexSnapshot
         if (pageIndex !in index.indices) return
         val (chapter, pageInChapter) = index[pageIndex]
+        // Warm adjacent chapters so swipe-ahead pages are less likely to flash blank.
+        if (chapter > 0) ensureLayout(chapter - 1)
+        if (chapter + 1 < source.chapterCount) ensureLayout(chapter + 1)
         val chapterLayout = ensureLayout(chapter) ?: return
         val slice = chapterLayout.pages.getOrNull(pageInChapter) ?: return
         val layout = chapterLayout.layout
+        if (layout.lineCount <= 0) return
         layout.paint.color = textColor
 
-        val top = layout.getLineTop(slice.startLine)
-        val bottom = layout.getLineBottom(slice.endLine)
+        val startLine = slice.startLine.coerceIn(0, layout.lineCount - 1)
+        val endLine = slice.endLine.coerceIn(startLine, layout.lineCount - 1)
+        val top = layout.getLineTop(startLine)
+        val bottom = layout.getLineBottom(endLine)
+        val contentHeight = (bottom - top).coerceAtLeast(1)
+
         val scale = minOf(
             canvas.width.toFloat() / config.pageWidthPx.coerceAtLeast(1),
             canvas.height.toFloat() / config.pageHeightPx.coerceAtLeast(1),
@@ -243,17 +261,26 @@ class ReflowEngine(
         val offsetX = (canvas.width - scaledWidth) / 2f
         val offsetY = (canvas.height - scaledHeight) / 2f
         val saveCount = canvas.save()
-        canvas.translate(offsetX, offsetY)
-        canvas.scale(scale, scale)
-        canvas.translate(config.paddingHorizontalPx.toFloat(), config.paddingVerticalPx - top.toFloat())
-        canvas.clipRect(
-            0f,
-            top.toFloat(),
-            layout.width.toFloat(),
-            bottom.toFloat(),
-        )
-        layout.draw(canvas)
-        canvas.restoreToCount(saveCount)
+        try {
+            canvas.translate(offsetX, offsetY)
+            canvas.scale(scale, scale)
+            // Move into the padded content box, then shift so the page's first line sits at y=0.
+            // Clip in the *post-shift* coordinate space so only this page's lines are visible.
+            canvas.translate(
+                config.paddingHorizontalPx.toFloat(),
+                config.paddingVerticalPx.toFloat(),
+            )
+            canvas.clipRect(
+                0f,
+                0f,
+                layout.width.toFloat(),
+                contentHeight.toFloat(),
+            )
+            canvas.translate(0f, -top.toFloat())
+            layout.draw(canvas)
+        } finally {
+            canvas.restoreToCount(saveCount)
+        }
     }
 
     override fun pageText(pageIndex: Int): String {
