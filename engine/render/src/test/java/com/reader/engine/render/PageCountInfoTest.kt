@@ -24,5 +24,8 @@ class PageCountInfoTest {
         assertThrows(IllegalArgumentException::class.java) {
             PageCountInfo(exact = 2, available = 3)
         }
+        assertThrows(IllegalArgumentException::class.java) {
+            PageCountInfo(exact = null, estimated = 2, available = 3)
+        }
     }
 }
