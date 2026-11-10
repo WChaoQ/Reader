@@ -4,4 +4,5 @@ plugins {
 
 dependencies {
     // pure Kotlin, no Android deps
+    testImplementation(libs.junit)
 }
