@@ -36,17 +36,29 @@ sealed interface HitResult {
     data class Link(val href: String) : HitResult
 }
 
+/**
+ * Format-neutral rendering facade consumed by the Reader feature.
+ *
+ * Implementations must keep drawing non-blocking: drawPage may draw cached output
+ * and schedule work, but must not perform document I/O or wait for rendering.
+ * close is idempotent; closeAndJoin waits for all backend work and owned resources.
+ */
 interface ReaderEngine {
     val pageCount: StateFlow<PageCountInfo>
     /** Explicitly advertises optional operations; callers must not infer support from empty results. */
     val capabilities: Set<ReaderCapability>
     val ready: StateFlow<Boolean>
 
+    /** Resolves a global page index to the stable document position. */
     fun locatorOf(pageIndex: Int): Locator
+
+    /** Resolves a stable document position to the currently available page index. */
     fun pageIndexOf(locator: Locator): Int
 
+    /** Draws only already available output; must not block on I/O or rendering. */
     fun drawPage(pageIndex: Int, canvas: Canvas, textColor: Int, backgroundColor: Int)
 
+    /** Available only when [ReaderCapability.PAGE_TEXT] is advertised. */
     fun pageText(pageIndex: Int): String
 
     /** Wait until a page is ready to present; reflow engines are ready synchronously. */
