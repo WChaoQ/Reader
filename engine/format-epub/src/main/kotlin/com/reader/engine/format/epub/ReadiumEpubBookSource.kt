@@ -16,6 +16,7 @@ import java.io.InputStream
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Publication
 import org.readium.r2.shared.util.AbsoluteUrl
+import org.readium.r2.shared.util.getOrElse
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.streamer.PublicationOpener
@@ -95,7 +96,7 @@ class ReadiumEpubBookSource private constructor(
         val children = children.mapNotNull { it.toTocEntry() }
         if (chapterIndex < 0 && children.isEmpty()) return null
         return TocEntry(
-            title = href.toString().substringAfterLast('/'),
+            title = title?.takeIf(String::isNotBlank) ?: href.toString().substringAfterLast('/'),
             locator = Locator(chapter = chapterIndex.coerceAtLeast(0), offset = 0),
             children = children,
         )
