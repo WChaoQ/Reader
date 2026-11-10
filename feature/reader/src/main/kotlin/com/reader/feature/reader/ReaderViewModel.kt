@@ -107,9 +107,11 @@ class ReaderViewModel @Inject constructor(
     private var pageWidth = 1080
     private var pageHeight = 1920
     private var fontScalePxPerSp = 1f
+    private var viewportInitialized = false
 
     init {
-        openJob = viewModelScope.launch { open() }
+        // Opening is deferred until Compose reports the actual viewport. This avoids
+        // an expensive fallback-size pagination pass followed by an immediate rebuild.
         viewModelScope.launch {
             bookmarkRepository.observe(bookId).collect { list ->
                 _state.update { it.copy(bookmarks = list) }
@@ -123,7 +125,10 @@ class ReaderViewModel @Inject constructor(
         fontScalePxPerSp: Float,
     ) {
         if (widthPx <= 0 || heightPx <= 0 || !fontScalePxPerSp.isFinite() || fontScalePxPerSp <= 0f) return
-        val changed = widthPx != pageWidth ||
+        val firstMeasurement = !viewportInitialized
+        viewportInitialized = true
+        val changed = firstMeasurement ||
+            widthPx != pageWidth ||
             heightPx != pageHeight ||
             fontScalePxPerSp != this.fontScalePxPerSp
         if (!changed) return
