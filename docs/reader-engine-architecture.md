@@ -360,7 +360,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 - BookSourceRepository 为 withContext 返回阶段可能发生的取消增加资源回收保护，避免 Source / PFD 已创建却未交给调用方。
 - 审核 TXT / Markdown / EPUB / PDF Source：EPUB Publication 操作串行化且 close 幂等；PDF Source 访问与关闭串行化且 close 幂等；TXT / Markdown 使用独立流或不可变解析结果。
 - Reader Feature 不直接引用 Readium 类型；Readium 仍封装在 EPUB Adapter 内。ReaderViewModel 通过 ReaderEngine capability 检查全文搜索能力。
-- 新增 Core Model 契约测试、XHTML Span 偏移回归测试、PageCountInfo 测试和历史 Progress / Bookmark Locator 有界修复测试；GitHub Actions 加入 Core Model、Core Data、Format API、Render、EPUB 等契约测试。
+- 新增 Core Model 契约测试、Markdown / XHTML Span 偏移回归测试、PageCountInfo 测试和历史 Progress / Bookmark Locator 有界修复测试；GitHub Actions 加入 Core Model、Core Data、Format API、Render、Markdown、EPUB 等契约测试。
 
 阶段 A 尚需验收：
 - 必须由用户手动运行 GitHub Actions，确认新增测试和全项目编译通过；本轮没有触发构建。
