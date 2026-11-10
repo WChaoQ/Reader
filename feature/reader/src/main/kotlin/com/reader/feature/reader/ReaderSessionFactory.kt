@@ -52,9 +52,10 @@ class ReaderSessionFactory @Inject constructor(
             val toc: List<TocEntry>
             when (book.format) {
                 BookFormat.PDF -> {
-                    descriptor = sourceRepository.openPdfDescriptor(book)
+                    val openedDescriptor = sourceRepository.openPdfDescriptor(book)
+                    descriptor = openedDescriptor
                     val fixed = FixedEngine(
-                        pfd = descriptor,
+                        pfd = openedDescriptor,
                         pageWidthPx = layoutConfig.pageWidthPx,
                         theme = theme,
                         initialPageIndex = initialLocator.chapter,
@@ -63,6 +64,9 @@ class ReaderSessionFactory @Inject constructor(
                     )
                     descriptor = null // Ownership transferred to FixedEngine.
                     engine = fixed
+                    require(fixed.pageCount.value.exact?.let { it > 0 } == true) {
+                        "PDF 文档没有可读取的页面"
+                    }
                     toc = (0 until fixed.pageCount.value.display).map { page ->
                         TocEntry("第 ${page + 1} 页", Locator(page, 0))
                     }
