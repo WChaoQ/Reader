@@ -48,6 +48,10 @@ jobs:
         with:
           cache-read-only: false
 
+      - name: Run Core Model contract tests
+        if: inputs.build_type == 'debug'
+        run: ./gradlew :core:model:test --stacktrace --no-daemon
+
       - name: Run Format API unit tests
         if: inputs.build_type == 'debug'
         run: ./gradlew :engine:format-api:testDebugUnitTest --stacktrace --no-daemon
