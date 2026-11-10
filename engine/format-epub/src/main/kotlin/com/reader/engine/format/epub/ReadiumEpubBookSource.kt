@@ -42,7 +42,7 @@ class ReadiumEpubBookSource private constructor(
     override suspend fun metadata(): BookMetadata {
         val metadata = publication.metadata
         return BookMetadata(
-            title = metadata.title?.takeIf(String::isNotBlank)
+            title = metadata.title.takeIf(String::isNotBlank)
                 ?: displayName.substringBeforeLast('.'),
             author = metadata.authors.firstOrNull()?.name?.takeIf(String::isNotBlank),
             language = metadata.languages.firstOrNull(),
@@ -182,7 +182,12 @@ class ReadiumEpubBookSource private constructor(
                 publication.close()
                 throw IOException("EPUB 没有可读取的正文内容（reading order 为空）")
             }
-            return ReadiumEpubBookSource(publication, document.displayName)
+            return try {
+                ReadiumEpubBookSource(publication, document.displayName)
+            } catch (failure: Throwable) {
+                publication.close()
+                throw failure
+            }
         }
     }
 }
