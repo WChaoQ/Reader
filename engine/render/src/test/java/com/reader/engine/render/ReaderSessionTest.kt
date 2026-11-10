@@ -48,6 +48,19 @@ class ReaderSessionTest {
     }
 
     @Test
+    fun engineCannotBeAccessedAfterClose() {
+        val session = ReaderSession(FakeReaderEngine())
+        session.close()
+
+        try {
+            session.engine
+            throw AssertionError("Expected engine access to be rejected")
+        } catch (_: IllegalStateException) {
+            // Expected.
+        }
+    }
+
+    @Test
     fun requireOpenRejectsClosedSession() {
         val session = ReaderSession(FakeReaderEngine())
 
