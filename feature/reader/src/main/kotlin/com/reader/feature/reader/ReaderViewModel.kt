@@ -304,9 +304,10 @@ class ReaderViewModel @Inject constructor(
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
         searchJob?.cancel()
         searchJob?.join()
+        val previousSession = session
+        session = null
         try {
-            withContext(NonCancellable) { session?.closeAndJoin() }
-            session = null
+            withContext(NonCancellable) { previousSession?.closeAndJoin() }
             val book = bookRepository.getBook(bookId)
                 ?: run {
                     _state.update { it.copy(isLoading = false, error = "书籍不存在") }
@@ -340,7 +341,7 @@ class ReaderViewModel @Inject constructor(
                 },
             )
             if (openGeneration.get() != generation) {
-                openedSession.close()
+                withContext(NonCancellable) { openedSession.closeAndJoin() }
                 return
             }
             session = openedSession
