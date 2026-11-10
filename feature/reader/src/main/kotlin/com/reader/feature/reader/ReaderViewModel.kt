@@ -22,6 +22,7 @@ import com.reader.engine.render.FixedEngine
 import com.reader.engine.render.PageCountInfo
 import com.reader.engine.render.ReaderEngine
 import com.reader.engine.render.ReflowEngine
+import com.reader.engine.render.ReaderSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -98,6 +99,7 @@ class ReaderViewModel @Inject constructor(
 
     private var engine: ReaderEngine? = null
     private var heldSource: BookSource? = null
+    private var session: ReaderSession? = null
     private var saveJob: Job? = null
     private var searchJob: Job? = null
     private var openJob: Job? = null
@@ -306,7 +308,8 @@ class ReaderViewModel @Inject constructor(
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
         searchJob?.cancel()
         searchJob?.join()
-        engine?.close()
+        session?.close() ?: engine?.close()
+        session = null
         engine = null
         heldSource = null
         try {
@@ -365,6 +368,7 @@ class ReaderViewModel @Inject constructor(
                     },
                 ).also { it.start(saved) }
             }
+            session = ReaderSession(engine = eng, source = heldSource)
             engine = eng
             // Both reflow and fixed-layout engines become ready only when the opening
             // page is actually drawable. In particular, PDF construction alone is not
@@ -391,7 +395,8 @@ class ReaderViewModel @Inject constructor(
             }
             bookRepository.updateLastRead(bookId, System.currentTimeMillis())
         } catch (cancelled: CancellationException) {
-            if (engine != null) engine?.close() else heldSource?.close()
+            session?.close() ?: if (engine != null) engine?.close() else heldSource?.close()
+            session = null
             engine = null
             heldSource = null
             throw cancelled
@@ -420,7 +425,9 @@ class ReaderViewModel @Inject constructor(
     override fun onCleared() {
         saveProgressNow()
         engineObserveJob?.cancel()
-        engine?.close() ?: heldSource?.close()
+        session?.close() ?: engine?.close() ?: heldSource?.close()
+        session = null
+        engine = null
         heldSource = null
         super.onCleared()
     }
