@@ -32,12 +32,12 @@ object XhtmlToBlocks {
         var italicStart = 0
 
         fun flushParagraph() {
-            val t = text.toString().replace(Regex("\\s+"), " ").trim()
-            if (t.isNotEmpty()) {
+            val (normalizedText, normalizedSpans) = normalizeTextAndSpans(text.toString(), spans)
+            if (normalizedText.isNotEmpty()) {
                 if (headingLevel in 1..6) {
-                    blocks += Block.Heading(headingLevel, t, spans.toList())
+                    blocks += Block.Heading(headingLevel, normalizedText, normalizedSpans)
                 } else {
-                    blocks += Block.Paragraph(t, spans.toList())
+                    blocks += Block.Paragraph(normalizedText, normalizedSpans)
                 }
             }
             text.clear()
@@ -101,12 +101,12 @@ object XhtmlToBlocks {
                             "h1", "h2", "h3", "h4", "h5", "h6", "p" -> flushParagraph()
                             "div" -> if (text.isNotEmpty()) flushParagraph()
                             "li" -> {
-                                val t = text.toString().replace(Regex("\\s+"), " ").trim()
-                                if (t.isNotEmpty()) {
+                                val (itemText, itemSpans) = normalizeTextAndSpans(text.toString(), spans)
+                                if (itemText.isNotEmpty()) {
                                     blocks += Block.ListItem(
                                         ordered = false,
                                         index = 0,
-                                        children = listOf(Block.Paragraph(t, spans.toList())),
+                                        children = listOf(Block.Paragraph(itemText, itemSpans)),
                                     )
                                 }
                                 text.clear()
@@ -132,9 +132,9 @@ object XhtmlToBlocks {
                                 }
                             }
                             "blockquote" -> {
-                                val t = text.toString().trim()
-                                if (t.isNotEmpty()) {
-                                    blocks += Block.Quote(listOf(Block.Paragraph(t, spans.toList())))
+                                val (quoteText, quoteSpans) = normalizeTextAndSpans(text.toString(), spans)
+                                if (quoteText.isNotEmpty()) {
+                                    blocks += Block.Quote(listOf(Block.Paragraph(quoteText, quoteSpans)))
                                 }
                                 text.clear()
                                 spans.clear()
@@ -150,4 +150,67 @@ object XhtmlToBlocks {
         }
         return blocks.ifEmpty { listOf(Block.Paragraph("")) }
     }
+    /**
+     * Collapse whitespace and trim it while remapping every span boundary to the
+     * normalized UTF-16 string. This keeps the public Block contract independent
+     * from XHTML source whitespace.
+     */
+    private fun normalizeTextAndSpans(
+        raw: String,
+        sourceSpans: List<Span>,
+    ): Pair<String, List<Span>> {
+        val normalized = StringBuilder(raw.length)
+        val boundaries = IntArray(raw.length + 1)
+        var pendingWhitespaceStart = -1
+        var pendingWhitespaceEnd = -1
+
+        for (index in raw.indices) {
+            val char = raw[index]
+            if (char.isWhitespace()) {
+                if (normalized.isNotEmpty()) {
+                    if (pendingWhitespaceStart < 0) pendingWhitespaceStart = index
+                    pendingWhitespaceEnd = index + 1
+                }
+                boundaries[index + 1] = normalized.length
+                continue
+            }
+
+            if (pendingWhitespaceStart >= 0) {
+                val beforeSpace = normalized.length
+                normalized.append(' ')
+                val afterSpace = normalized.length
+                for (boundary in pendingWhitespaceStart until pendingWhitespaceEnd) {
+                    boundaries[boundary] = beforeSpace
+                }
+                boundaries[pendingWhitespaceEnd] = afterSpace
+                pendingWhitespaceStart = -1
+                pendingWhitespaceEnd = -1
+            }
+
+            boundaries[index] = normalized.length
+            normalized.append(char)
+            boundaries[index + 1] = normalized.length
+        }
+
+        // Trailing whitespace is trimmed and maps to the final text boundary.
+        if (pendingWhitespaceStart >= 0) {
+            for (boundary in pendingWhitespaceStart..pendingWhitespaceEnd) {
+                boundaries[boundary] = normalized.length
+            }
+        }
+
+        val mappedSpans = sourceSpans.mapNotNull { span ->
+            val start = boundaries[span.start.coerceIn(0, raw.length)]
+            val end = boundaries[span.end.coerceIn(0, raw.length)]
+            if (end <= start) return@mapNotNull null
+            when (span) {
+                is Span.Bold -> Span.Bold(start, end)
+                is Span.Italic -> Span.Italic(start, end)
+                is Span.Link -> Span.Link(start, end, span.href)
+                is Span.Code -> Span.Code(start, end)
+            }
+        }
+        return normalized.toString() to mappedSpans
+    }
+
 }
