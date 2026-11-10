@@ -12,4 +12,5 @@ dependencies {
     implementation(project(":engine:layout"))
     implementation(project(":engine:format-api"))
     implementation(libs.kotlinx.coroutines.android)
+    testImplementation(libs.junit)
 }
