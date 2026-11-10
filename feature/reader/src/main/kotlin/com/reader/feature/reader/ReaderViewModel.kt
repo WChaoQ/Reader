@@ -102,6 +102,7 @@ class ReaderViewModel @Inject constructor(
     private var searchJob: Job? = null
     private var openJob: Job? = null
     private var engineObserveJob: Job? = null
+    private var pageJumpJob: Job? = null
     private var currentLocator: Locator = Locator(0, 0)
     private val openMutex = Mutex()
     private var pageWidth = 1080
@@ -149,9 +150,8 @@ class ReaderViewModel @Inject constructor(
             is ReaderEvent.JumpToPage -> jump(event.page)
             is ReaderEvent.SelectPage -> jump(event.page)
             is ReaderEvent.JumpToLocator -> {
-                currentLocator = event.locator
                 val page = engine?.pageIndexOf(event.locator) ?: 0
-                jump(page, updateLocator = false)
+                jump(page, targetLocator = event.locator)
                 _state.update {
                     it.copy(
                         tocVisible = false,
@@ -260,12 +260,21 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    private fun jump(page: Int, updateLocator: Boolean = true) {
-        val count = engine?.pageCount?.value?.available ?: return
+    private fun jump(page: Int, targetLocator: Locator? = null) {
+        val activeEngine = engine ?: return
+        val count = activeEngine.pageCount.value.available
         val next = page.coerceIn(0, (count - 1).coerceAtLeast(0))
-        if (updateLocator) currentLocator = engine?.locatorOf(next) ?: currentLocator
-        _state.update { it.copy(currentPage = next) }
-        scheduleSaveProgress()
+
+        // Do not switch the visible page until its bitmap is ready. This keeps the
+        // previous PDF page on screen instead of briefly painting an empty canvas.
+        pageJumpJob?.cancel()
+        pageJumpJob = viewModelScope.launch {
+            if (activeEngine is FixedEngine && !activeEngine.awaitPage(next)) return@launch
+            if (engine !== activeEngine) return@launch
+            currentLocator = targetLocator ?: activeEngine.locatorOf(next)
+            _state.update { it.copy(currentPage = next) }
+            scheduleSaveProgress()
+        }
     }
 
     private fun scheduleSaveProgress() {
@@ -290,6 +299,8 @@ class ReaderViewModel @Inject constructor(
     }
 
     private suspend fun openInternal(startLocator: Locator?) {
+        pageJumpJob?.cancel()
+        pageJumpJob = null
         engineObserveJob?.cancel()
         engineObserveJob = null
         _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
