@@ -46,7 +46,7 @@ class ReflowEngine(
     @Volatile private var pageIndexSnapshot: List<Pair<Int, Int>> = emptyList()
     private val chapterPageCounts = ConcurrentHashMap<Int, Int>()
     private val chapterPages = ConcurrentHashMap<Int, List<PageSlice>>()
-    private val layouts = LruCache<Int, ChapterLayout>(3)
+    private val layouts = LruCache<Int, ChapterLayout>(8)
     private val layoutLock = Any()
     private val generation = AtomicLong(0)
     private val layoutJobs = ConcurrentHashMap<Int, Job>()
