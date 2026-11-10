@@ -41,6 +41,7 @@ class ReaderSessionFactory @Inject constructor(
         val taskJob = SupervisorJob()
         val taskScope = CoroutineScope(taskJob + dispatchers.default)
         var source: com.reader.engine.format.BookSource? = null
+        var sessionSource: com.reader.engine.format.BookSource? = null
         var descriptor: ParcelFileDescriptor? = null
         var engine: ReaderEngine? = null
 
@@ -66,6 +67,7 @@ class ReaderSessionFactory @Inject constructor(
 
                 BookFormat.EPUB, BookFormat.MD, BookFormat.TXT -> {
                     source = sourceRepository.open(book)
+                    sessionSource = source
                     toc = try {
                         source.toc()
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -89,7 +91,7 @@ class ReaderSessionFactory @Inject constructor(
 
             return ReaderSession(
                 engine = requireNotNull(engine),
-                source = if (book.format == BookFormat.PDF) null else null,
+                source = sessionSource,
                 toc = toc,
                 taskJob = taskJob,
             )
