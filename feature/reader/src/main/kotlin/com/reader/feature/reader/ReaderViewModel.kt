@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 data class SearchHit(
@@ -91,6 +93,7 @@ class ReaderViewModel @Inject constructor(
     private var session: ReaderSession? = null
     private val engine: ReaderEngine? get() = session?.engine
     private val openGeneration = AtomicLong(0)
+    private val openMutex = Mutex()
     private var saveJob: Job? = null
     private var searchJob: Job? = null
     private var openJob: Job? = null
@@ -287,7 +290,7 @@ class ReaderViewModel @Inject constructor(
     }
 
     private suspend fun open(startLocator: Locator? = null) {
-        openInternal(startLocator)
+        openMutex.withLock { openInternal(startLocator) }
     }
 
     private suspend fun openInternal(startLocator: Locator?) {
@@ -341,7 +344,6 @@ class ReaderViewModel @Inject constructor(
             session = openedSession
             val eng = openedSession.engine
             val toc = openedSession.toc
-            engine = eng
             // Both reflow and fixed-layout engines become ready only when the opening
             // page is actually drawable. In particular, PDF construction alone is not
             // sufficient because its first bitmap is rendered asynchronously.
@@ -361,6 +363,7 @@ class ReaderViewModel @Inject constructor(
             }
             engineObserveJob = viewModelScope.launch {
                 eng.pageCount.collect { info ->
+                    if (openGeneration.get() != generation || session?.engine !== eng) return@collect
                     val resolvedPage = eng.pageIndexOf(currentLocator)
                     _state.update { s -> s.copy(pageCount = info, currentPage = resolvedPage) }
                 }
