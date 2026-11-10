@@ -347,22 +347,29 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 
 ### 13.1 架构落地记录
 
-**2026-11-11：Session 生命周期第一步**
+**2026-11-11：阶段 B — Session 生命周期与创建边界**
 
 已完成：
-- 新增 `:engine:render` 的 `ReaderSession`，作为单个打开文档的生命周期门面。
-- ReaderViewModel 将当前 ReaderEngine 与可选 BookSource 绑定到同一个 Session；全文搜索通过 Session 访问 BookSource。
-- Session 以原子状态保证 close 幂等，并统一委托 ReaderEngine 释放底层资源。
-- 明确当前资源所有权：ReflowEngine 负责关闭其 BookSource；FixedEngine 负责关闭 PdfRenderer / ParcelFileDescriptor。Session 不重复关闭 Source 或 PFD。
-- 新增 Session close 幂等性与关闭后访问保护测试。
+- `:engine:render` 新增 `ReaderSession`，以原子状态保证关闭幂等。
+- 新增 `ReaderSessionFactory`，集中负责 PDF / Reflow 引擎选择、资源获取、初始化和失败回滚；ReaderViewModel 不再直接构造格式引擎。
+- Session 持有当前 Engine、可选 BookSource、TOC 快照和任务 Job；ReflowEngine 使用 Session 专属 SupervisorJob，不再使用 ViewModel 的全局作用域。
+- 资源所有权明确：ReflowEngine 接管并关闭 BookSource；FixedEngine 接管并关闭 ParcelFileDescriptor；Session 不重复释放底层资源。
+- ReaderViewModel 只保存 Session；Engine 是从 Session 派生的只读访问属性，不再单独持有 Engine 或 Source。
+- `ReaderEngine.awaitPage` 统一页面就绪能力，ReaderViewModel 不再判断 FixedEngine 类型。
+- 打开流程通过 Mutex 串行化；generation token 阻止旧会话的布局回调和页数更新污染新会话。
+- 打开异常时由 Factory 回滚尚未转移的资源；Session 关闭时取消其任务 Job 并委托 Engine 清理。
+- 新增 Session 幂等关闭、任务取消和关闭后访问保护测试；GitHub Actions 已纳入 Render Engine 单元测试。
 
-尚未完成：
-- Session 创建仍由 ReaderViewModel 组装，尚未收敛到唯一 ReaderSessionFactory。
-- 打开失败的部分初始化回滚、Session 任务作用域和统一 generation 隔离仍需继续治理。
-- ReaderViewModel 仍保留 engine/source 兼容字段；后续应在不改变 UI 行为的前提下收敛为只持有 Session。
-- 本轮没有替换 Readium、PdfRenderer、StaticLayout，也没有改变现有阅读交互。
+仍属于阶段 B，尚未验收：
+- 当前 `ReaderEngine.close()` 的底层清理由引擎异步完成；尚未提供可等待的统一关闭完成协议，需继续处理关闭与正在执行的 I/O / Canvas 使用之间的竞态。
+- 尚未为 Session 增加受控任务提交入口和关闭后请求拒绝的统一 API；目前 UI 通过持有/释放 Session 避免继续提交请求。
+- Factory 的部分初始化回滚、快速连续切换、取消与关闭竞态仍需补充专门测试。
+- 需要确认所有资源流都由打开它们的调用方关闭，并补齐异常路径验证。
 
-本轮是阶段 B 的第一步，不代表 Session 生命周期治理已经全部验收。
+阶段边界：
+- 不进入 Reflow 分页优化、Fixed 位图缓存优化或格式适配器替换；这些属于后续阶段。
+- 不替换 Readium、PdfRenderer、StaticLayout，不改变既定阅读界面与交互。
+- 本次未触发构建，仍由用户手动决定何时运行 GitHub Actions。
 
 ## 14. 实施顺序（必须逐阶段验收）
 
