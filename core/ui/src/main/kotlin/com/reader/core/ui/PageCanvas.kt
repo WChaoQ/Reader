@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -24,14 +23,16 @@ fun PageCanvas(
     revision: Int = 0,
     onDrawPage: (android.graphics.Canvas) -> Unit,
 ) {
-    key(revision) {
-        Box(modifier = modifier.background(background)) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                if (size.width <= 0f || size.height <= 0f) return@Canvas
-                drawIntoCanvas { composeCanvas ->
-                    val native = composeCanvas.nativeCanvas
-                    onDrawPage(native)
-                }
+    Box(modifier = modifier.background(background)) {
+        // Capture revision in the draw lambda to invalidate drawing when an async
+        // page render completes, without replacing the Canvas subtree on every update.
+        val renderRevision = revision
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            renderRevision.hashCode()
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
+            drawIntoCanvas { composeCanvas ->
+                val native = composeCanvas.nativeCanvas
+                onDrawPage(native)
             }
         }
     }
