@@ -165,7 +165,7 @@ class FixedEngine(
      * Suspends until the requested page bitmap is in cache. The reader can keep showing
      * the previous page until this returns, avoiding a blank frame during page changes.
      */
-    suspend fun awaitPage(pageIndex: Int): Boolean {
+    override suspend fun awaitPage(pageIndex: Int): Boolean {
         if (closed || pageIndex !in 0 until pageTotal) return false
         synchronized(bitmapCache) {
             val cached = bitmapCache.get(pageIndex)
