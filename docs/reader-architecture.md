@@ -391,13 +391,17 @@ Layout 模块通过 Robolectric 测试 StaticLayout 真实行布局，覆盖空�
 - :core:model 包含 Book、BookFormat、Locator、BookMetadata、TocEntry、ResourceRef，以及数据库无关的 Bookmark、ReaderSettings。
 - Manifest 未声明 INTERNET 权限。
 - Benchmark 已配置 Macrobenchmark 目标工程。
+- EPUB 已通过 Readium 3.4.0 的 AssetRetriever / PublicationOpener 进入 BookSource 适配层；Readium 类型没有暴露到 Feature。
+- EPUB 章节内容仍由项目内 XhtmlToBlocks 转换为统一 Block，分页与渲染继续使用 Reader 自己的引擎；本项目没有接入 Readium Navigator。
+- 已移除不再被 Handler 使用的旧 ZipFile / OPF / TOC 解析器，避免两套 EPUB 容器解析链并存。
+- 已为 EPUB 包内资源路径解析增加独立单元测试；尚未执行构建验证。
 
 ### 需要结合完整实现持续核验
 
 - 四种格式解析器的边界行为、异常模型和大文件性能。
 - Room Entity/DAO/Repository 的数据关系与 Migration。
 - 不同 DocumentProvider 的持久化授权、文件失效恢复和 seekable descriptor 兼容性。
-- EPUB 是否按需读取章节且没有额外整本解压副本。
+- Readium 3.4.0 适配器在真实 SAF DocumentProvider 上的打开、章节读取、资源访问和关闭行为；确认没有额外整本解压副本。
 - PDF 页面缓存是否有上限、资源是否及时释放。
 - ViewModel 是否统一使用 StateFlow/UDF 和生命周期感知收集。
 - Hilt 格式注册是否集中且无重复绑定。
