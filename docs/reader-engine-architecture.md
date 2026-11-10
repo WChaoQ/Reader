@@ -58,7 +58,7 @@ Move text measurement and pagination toward Compose `TextMeasurer` behind the sa
 ## Current migration status
 
 - [x] Existing format and rendering contracts identified.
-- [x] PDF opening readiness now waits for the first requested page bitmap.
+- [x] PDF opening readiness waits for the first requested page bitmap.\n- [x] PDF page navigation waits for the destination bitmap before changing the visible page, preserving the previous page during rendering.
 - [ ] Readium EPUB adapter and compatibility tests.
 - [ ] Random-access fallback policy for SAF providers that expose only streams/pipes.
 - [ ] Replace StaticLayout pagination with TextMeasurer.
