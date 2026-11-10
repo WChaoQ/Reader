@@ -12,6 +12,10 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
+
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+    }
 }
 
 dependencies {
@@ -39,4 +43,6 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.profileinstaller)
+
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 }
