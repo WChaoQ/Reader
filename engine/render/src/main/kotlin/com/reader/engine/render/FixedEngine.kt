@@ -106,6 +106,7 @@ class FixedEngine(
     // PdfRenderer was constructed. The UI can safely leave its loading state then.
     private val _ready = kotlinx.coroutines.flow.MutableStateFlow(false)
     override val ready: kotlinx.coroutines.flow.StateFlow<Boolean> = _ready
+    override val capabilities: Set<ReaderCapability> = emptySet()
 
     init {
         if (pageTotal > 0) {
