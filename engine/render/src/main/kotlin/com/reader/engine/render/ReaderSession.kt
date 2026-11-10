@@ -1,20 +1,23 @@
 package com.reader.engine.render
 
+import com.reader.core.model.TocEntry
 import com.reader.engine.format.BookSource
+import kotlinx.coroutines.Job
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Owns one opened reader engine and exposes the format source for non-rendering
- * operations (for example text search).
+ * Owns all resources for one opened document.
  *
- * The engine is the resource owner: ReflowEngine closes its BookSource and
- * FixedEngine closes its PDF descriptor. The session must therefore never close
- * [source] separately. This keeps cleanup single-owner and idempotent.
+ * The engine owns its format-specific source/descriptor. The session owns the
+ * coroutine job used to create and coordinate reflow work. Closing the session
+ * invalidates it first, cancels session work, then delegates backend cleanup.
  */
 class ReaderSession(
     val engine: ReaderEngine,
     val source: BookSource? = null,
+    val toc: List<TocEntry> = emptyList(),
+    private val taskJob: Job? = null,
 ) : Closeable {
     private val closed = AtomicBoolean(false)
 
@@ -27,6 +30,7 @@ class ReaderSession(
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
+            taskJob?.cancel()
             engine.close()
         }
     }
