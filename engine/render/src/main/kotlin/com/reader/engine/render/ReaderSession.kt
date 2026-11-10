@@ -58,7 +58,7 @@ class ReaderSession(
         block: suspend CoroutineScope.() -> Unit,
     ): Job {
         requireOpen()
-        return CoroutineScope(taskJob + context).launch(block = block)
+        return CoroutineScope(taskJob + context.minusKey(Job)).launch(block = block)
     }
 
     override fun close() {
