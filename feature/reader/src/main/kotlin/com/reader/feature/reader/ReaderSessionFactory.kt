@@ -13,8 +13,11 @@ import com.reader.engine.render.ReaderEngine
 import com.reader.engine.render.ReaderSession
 import com.reader.engine.render.ReflowEngine
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import android.os.ParcelFileDescriptor
 
@@ -100,7 +103,10 @@ class ReaderSessionFactory @Inject constructor(
             taskJob.cancel()
             val activeEngine = engine
             if (activeEngine != null) {
-                activeEngine.close()
+                withContext(NonCancellable) {
+                    taskJob.cancelAndJoin()
+                    activeEngine.closeAndJoin()
+                }
             } else {
                 runCatching { source?.close() }
                 runCatching { descriptor?.close() }
