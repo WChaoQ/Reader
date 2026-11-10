@@ -21,19 +21,37 @@ class BookSourceRepository @Inject constructor(
     private val formatRegistry: FormatRegistry,
     private val dispatchers: ReaderDispatchers,
 ) {
-    suspend fun open(book: Book): BookSource = withContext(dispatchers.io) {
-        val document = documentHandle(book)
-        val source = formatRegistry.open(document, book.format)
-        if (source.format != book.format) {
-            source.close()
-            error("Stored format ${book.format} does not match parsed format ${source.format}")
+    suspend fun open(book: Book): BookSource {
+        var acquired: BookSource? = null
+        return try {
+            withContext(dispatchers.io) {
+                val document = documentHandle(book)
+                val source = formatRegistry.open(document, book.format)
+                acquired = source
+                if (source.format != book.format) {
+                    source.close()
+                    acquired = null
+                    error("Stored format ${book.format} does not match parsed format ${source.format}")
+                }
+                source
+            }
+        } catch (failure: Throwable) {
+            runCatching { acquired?.close() }
+            throw failure
         }
-        source
     }
 
-    suspend fun openPdfDescriptor(book: Book): ParcelFileDescriptor = withContext(dispatchers.io) {
-        require(book.format.name == "PDF") { "Document is not a PDF" }
-        documentHandle(book).openSeekableFileDescriptor()
+    suspend fun openPdfDescriptor(book: Book): ParcelFileDescriptor {
+        var acquired: ParcelFileDescriptor? = null
+        return try {
+            withContext(dispatchers.io) {
+                require(book.format.name == "PDF") { "Document is not a PDF" }
+                documentHandle(book).openSeekableFileDescriptor().also { acquired = it }
+            }
+        } catch (failure: Throwable) {
+            runCatching { acquired?.close() }
+            throw failure
+        }
     }
 
     private suspend fun documentHandle(book: Book): DocumentHandle {
