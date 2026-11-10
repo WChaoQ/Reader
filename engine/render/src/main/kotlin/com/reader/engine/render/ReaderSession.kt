@@ -15,12 +15,26 @@ import java.util.concurrent.atomic.AtomicBoolean
  * invalidates it first, cancels session work, then delegates backend cleanup.
  */
 class ReaderSession(
-    val engine: ReaderEngine,
-    val source: BookSource? = null,
+    engine: ReaderEngine,
+    source: BookSource? = null,
     val toc: List<TocEntry> = emptyList(),
     private val taskJob: Job? = null,
 ) : Closeable {
+    private val backend = engine
+    private val sourceRef = source
     private val closed = AtomicBoolean(false)
+
+    val engine: ReaderEngine
+        get() {
+            requireOpen()
+            return backend
+        }
+
+    val source: BookSource?
+        get() {
+            requireOpen()
+            return sourceRef
+        }
 
     val isClosed: Boolean
         get() = closed.get()
@@ -32,13 +46,13 @@ class ReaderSession(
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             taskJob?.cancel()
-            engine.close()
+            backend.close()
         }
     }
 
     suspend fun closeAndJoin() {
         close()
         taskJob?.cancelAndJoin()
-        engine.closeAndJoin()
+        backend.closeAndJoin()
     }
 }
