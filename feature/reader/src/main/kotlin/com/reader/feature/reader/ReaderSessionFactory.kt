@@ -66,17 +66,18 @@ class ReaderSessionFactory @Inject constructor(
                 }
 
                 BookFormat.EPUB, BookFormat.MD, BookFormat.TXT -> {
-                    source = sourceRepository.open(book)
-                    sessionSource = source
+                    val openedSource = sourceRepository.open(book)
+                    source = openedSource
+                    sessionSource = openedSource
                     toc = try {
-                        source.toc()
+                        openedSource.toc()
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
                         emptyList()
                     }
                     val reflow = ReflowEngine(
-                        source = source,
+                        source = openedSource,
                         config = layoutConfig,
                         paginator = paginator,
                         scope = taskScope,
