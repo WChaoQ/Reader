@@ -118,6 +118,7 @@ class ReaderSessionTest {
     ) : ReaderEngine {
         override val pageCount = MutableStateFlow(PageCountInfo(exact = 0))
         override val ready = MutableStateFlow(false)
+        override val capabilities = emptySet<ReaderCapability>()
         var closeCalls: Int = 0
             private set
 
