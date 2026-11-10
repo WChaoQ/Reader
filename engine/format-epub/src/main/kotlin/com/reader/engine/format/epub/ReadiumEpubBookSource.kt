@@ -58,10 +58,12 @@ class ReadiumEpubBookSource private constructor(
         val href = link.href.toString()
         val resource = publication.get(link)
             ?: throw IOException("Readium cannot resolve EPUB chapter: $href")
-        val bytes = resource.use { chapterResource ->
-            chapterResource.read().getOrElse { error ->
+        val bytes = try {
+            resource.read().getOrElse { error ->
                 throw IOException("Unable to read EPUB chapter $href: $error")
             }
+        } finally {
+            resource.close()
         }
         val xhtml = decodeXhtml(bytes)
         val blocks = XhtmlToBlocks.parse(xhtml, href)
@@ -77,10 +79,12 @@ class ReadiumEpubBookSource private constructor(
             ?: throw IOException("EPUB resource not found: ${ref.href}")
         val resource = publication.get(link)
             ?: throw IOException("Readium cannot resolve EPUB resource: " + ref.href)
-        val bytes = resource.use { contentResource ->
-            contentResource.read().getOrElse { error ->
+        val bytes = try {
+            resource.read().getOrElse { error ->
                 throw IOException("Unable to read EPUB resource " + ref.href + ": $error")
             }
+        } finally {
+            resource.close()
         }
         return ByteArrayInputStream(bytes)
     }
