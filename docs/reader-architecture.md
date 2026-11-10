@@ -6,7 +6,7 @@
 
 本文区分已核验的工程事实与架构约束。Gradle 中声明了某模块，不代表其中所有功能均已完整实现。
 
-## 1. 产品边界与设计原则
+> 阅读引擎的最终权威规范见 [reader-engine-architecture.md](reader-engine-architecture.md)。本文描述应用整体分层；涉及格式适配、统一协议、双布局管线、Reader Session、缓存与资源生命周期时，以该引擎规范为准。\n\n## 1. 产品边界与设计原则
 
 ### 产品边界
 
