@@ -314,6 +314,7 @@ class ReaderViewModel @Inject constructor(
                         pfd = sourceRepository.openPdfDescriptor(book),
                         pageWidthPx = pageWidth,
                         theme = settings.theme,
+                        initialPageIndex = saved.chapter,
                         ioDispatcher = dispatchers.io,
                         onPageRendered = {
                             _state.update { state -> state.copy(renderRevision = state.renderRevision + 1) }
@@ -354,7 +355,10 @@ class ReaderViewModel @Inject constructor(
                 ).also { it.start(saved) }
             }
             engine = eng
-            if (eng is ReflowEngine) eng.ready.first { it }
+            // Both reflow and fixed-layout engines become ready only when the opening
+            // page is actually drawable. In particular, PDF construction alone is not
+            // sufficient because its first bitmap is rendered asynchronously.
+            eng.ready.first { it }
             val startPage = eng.pageIndexOf(saved)
             _state.update {
                 it.copy(
