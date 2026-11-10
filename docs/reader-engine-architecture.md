@@ -350,26 +350,27 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 **2026-11-11：阶段 B — Session 生命周期与创建边界**
 
 已完成：
-- `:engine:render` 新增 `ReaderSession`，以原子状态保证关闭幂等。
-- 新增 `ReaderSessionFactory`，集中负责 PDF / Reflow 引擎选择、资源获取、初始化和失败回滚；ReaderViewModel 不再直接构造格式引擎。
-- Session 持有当前 Engine、可选 BookSource、TOC 快照和任务 Job；ReflowEngine 使用 Session 专属 SupervisorJob，不再使用 ViewModel 的全局作用域。
+- 新增 `:engine:render` 的 `ReaderSession`，以原子状态保证关闭幂等；关闭后拒绝读取 Engine / Source 或提交新任务。
+- 新增 `ReaderSessionFactory`，集中负责 PDF / Reflow 引擎选择、资源获取、初始化和部分初始化失败回滚；ReaderViewModel 不再直接构造格式引擎。
+- Session 持有当前 Engine、可选 BookSource、TOC 快照和专属 SupervisorJob；ReflowEngine 使用 Session 专属任务作用域，不再使用 ViewModel 的全局作用域。
+- 全文搜索也作为 Session 子任务运行；Session 关闭会先取消并等待全部子任务结束，再释放底层 Source / PDF Descriptor。
 - 资源所有权明确：ReflowEngine 接管并关闭 BookSource；FixedEngine 接管并关闭 ParcelFileDescriptor；Session 不重复释放底层资源。
+- 新增 `ReaderEngine.awaitPage` 和 `closeAndJoin` 统一能力；ReaderViewModel 不再判断 FixedEngine 类型。
+- Reflow / Fixed 引擎均支持等待关闭完成；Reflow 关闭时串行化任务注册与关闭快照，避免新布局任务漏出清理集合；Fixed 关闭时等待 PdfRenderer 使用互斥锁退出后再释放 Descriptor。
 - ReaderViewModel 只保存 Session；Engine 是从 Session 派生的只读访问属性，不再单独持有 Engine 或 Source。
-- `ReaderEngine.awaitPage` 统一页面就绪能力，ReaderViewModel 不再判断 FixedEngine 类型。
 - 打开流程通过 Mutex 串行化；generation token 阻止旧会话的布局回调和页数更新污染新会话。
-- 打开异常时由 Factory 回滚尚未转移的资源；Session 关闭时取消其任务 Job 并委托 Engine 清理。
-- 新增 Session 幂等关闭、任务取消和关闭后访问保护测试；GitHub Actions 已纳入 Render Engine 单元测试。
+- 新文档打开前先从 ViewModel 脱离旧 Session，等待旧 Session 的任务与资源全部清理，再创建新会话。
+- 新增 Session 幂等关闭、任务取消、关闭后访问拒绝、关闭等待任务退出等单元测试；GitHub Actions 已纳入 Render Engine 单元测试。
 
-仍属于阶段 B，尚未验收：
-- 当前 `ReaderEngine.close()` 的底层清理由引擎异步完成；尚未提供可等待的统一关闭完成协议，需继续处理关闭与正在执行的 I/O / Canvas 使用之间的竞态。
-- 尚未为 Session 增加受控任务提交入口和关闭后请求拒绝的统一 API；目前 UI 通过持有/释放 Session 避免继续提交请求。
-- Factory 的部分初始化回滚、快速连续切换、取消与关闭竞态仍需补充专门测试。
-- 需要确认所有资源流都由打开它们的调用方关闭，并补齐异常路径验证。
+阶段 B 尚需验收：
+- 补充 ReaderSessionFactory 的资源回滚测试，以及快速连续切换、取消打开、PDF 渲染中关闭等集成/设备测试。
+- 需要在用户手动触发 GitHub Actions 后确认编译和测试结果；本次没有触发构建。
+- 确认不同 DocumentProvider 下 PDF / EPUB 随机访问和权限撤销的异常路径。
 
 阶段边界：
 - 不进入 Reflow 分页优化、Fixed 位图缓存优化或格式适配器替换；这些属于后续阶段。
 - 不替换 Readium、PdfRenderer、StaticLayout，不改变既定阅读界面与交互。
-- 本次未触发构建，仍由用户手动决定何时运行 GitHub Actions。
+- 阶段 B 的代码主干已落地，但在构建和真实设备验收前不标记为最终通过。
 
 ## 14. 实施顺序（必须逐阶段验收）
 
