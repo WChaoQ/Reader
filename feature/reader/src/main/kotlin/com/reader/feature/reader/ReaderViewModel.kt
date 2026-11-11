@@ -358,51 +358,70 @@ class ReaderViewModel @Inject constructor(
             }
             session = openedSession
             val eng = openedSession.engine
+            val toc = openedSession.toc
+            // Both reflow and fixed-layout engines become ready only when the opening
+            // page is actually drawable. In particular, PDF construction alone is not
+            // sufficient because its first bitmap is rendered asynchronously.
+            eng.ready.first { it }
+            val startPage = eng.pageIndexOf(saved)
+            _state.update {
+                it.copy(
+                    isLoading = false,
+                    title = book.title,
+                    currentPage = startPage,
+                    pageCount = eng.pageCount.value,
+                    pageReady = true,
+                    theme = settings.theme,
+                    format = book.format,
+                    toc = toc,
+                )
+            }
             engineObserveJob = viewModelScope.launch {
-                eng.pageCount.collect { count ->
-                    if (openGeneration.get() == generation) {
-                        _state.update { it.copy(pageCount = count, renderRevision = it.renderRevision + 1) }
-                    }
+                eng.pageCount.collect { info ->
+                    if (openGeneration.get() != generation || session?.engine !== eng) return@collect
+                    val resolvedPage = eng.pageIndexOf(currentLocator)
+                    _state.update { s -> s.copy(pageCount = info, currentPage = resolvedPage) }
                 }
             }
-            val initialPage = eng.pageIndexOf(saved)
-            if (eng.awaitPage(initialPage)) {
-                currentLocator = eng.locatorOf(initialPage)
-                _state.update {
-                    it.copy(
-                        title = book.title,
-                        isLoading = false,
-                        error = null,
-                        currentPage = initialPage,
-                        pageCount = eng.pageCount.value,
-                        pageReady = true,
-                        format = book.format,
-                        theme = settings.theme,
-                        toc = openedSession.toc,
-                        tocVisible = false,
-                        bookmarksVisible = false,
-                        searchVisible = false,
-                    )
-                }
-            } else {
-                _state.update { it.copy(isLoading = false, error = "无法打开文档") }
-            }
+            bookRepository.updateLastRead(bookId, System.currentTimeMillis())
         } catch (cancelled: CancellationException) {
+            if (openGeneration.get() == generation) {
+                withContext(NonCancellable) { session?.closeAndJoin() }
+                session = null
+            }
             throw cancelled
-        } catch (failure: Throwable) {
-            _state.update { it.copy(isLoading = false, error = failure.message ?: "打开失败") }
+        } catch (security: SecurityException) {
+            if (openGeneration.get() == generation) {
+                withContext(NonCancellable) { session?.closeAndJoin() }
+                session = null
+                _state.update {
+                    it.copy(isLoading = false, error = "无法访问原文件，请重新从系统文件选择器打开")
+                }
+            }
+        } catch (missing: java.io.FileNotFoundException) {
+            if (openGeneration.get() == generation) {
+                withContext(NonCancellable) { session?.closeAndJoin() }
+                session = null
+                _state.update {
+                    it.copy(isLoading = false, error = "原文件已移动或删除，请重新选择文档")
+                }
+            }
+        } catch (t: Throwable) {
+            if (openGeneration.get() == generation) {
+                withContext(NonCancellable) { session?.closeAndJoin() }
+                session = null
+                _state.update { it.copy(isLoading = false, error = t.message ?: "打开失败") }
+            }
         }
     }
 
     override fun onCleared() {
-        openGeneration.incrementAndGet()
-        saveJob?.cancel()
-        searchJob?.cancel()
-        openJob?.cancel()
-        pageJumpJob?.cancel()
+        saveProgressNow()
         engineObserveJob?.cancel()
-        val oldSession = session
+        searchJob?.cancel()
+        openGeneration.incrementAndGet()
+        session?.close()
         session = null
-        viewModelScope.launch(NonCancellable) { oldSession?.closeAndJoin() }
+        super.onCleared()
     }
 }
