@@ -12,6 +12,9 @@ dependencies {
     implementation(project(":core:model"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
+    // Android provides XmlPullParser at runtime, but local JVM unit tests need
+    // a concrete implementation for XmlPullParserFactory.newInstance().
+    testImplementation("net.sf.kxml:kxml2:2.3.0")
 
     // Keep Readium entirely inside this adapter module.
     implementation(libs.readium.shared)
