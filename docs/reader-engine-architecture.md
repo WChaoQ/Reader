@@ -389,6 +389,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 - 打开流程通过 Mutex 串行化；generation token 阻止旧会话的布局回调和页数更新污染新会话。
 - 新文档打开前先从 ViewModel 脱离旧 Session，等待旧 Session 的任务与资源全部清理，再创建新会话。
 - 新增 Session 幂等关闭、任务取消、关闭后访问拒绝、关闭等待任务退出等单元测试；GitHub Actions 已纳入 Render Engine 单元测试。
+- 本轮新增 `ReaderSessionLifecycleTest`：验证 close 会取消并等待 Session 子任务退出、并发 close 只执行一次后端关闭、关闭后拒绝 Engine 访问和新任务注册。该测试尚待用户手动运行构建验证。
 
 阶段 B 尚需验收：
 - 补充 ReaderSessionFactory 的资源回滚测试，以及快速连续切换、取消打开、PDF 渲染中关闭等集成/设备测试。
