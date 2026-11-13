@@ -1,6 +1,12 @@
 name: Build App
 
 on:
+  push:
+    branches:
+      - feature/reader-open-parse-render
+  pull_request:
+    branches:
+      - feature/reader-open-parse-render
   workflow_dispatch:
     inputs:
       build_type:
@@ -18,7 +24,7 @@ concurrency:
 
 jobs:
   build:
-    name: Assemble ${{ inputs.build_type }}
+    name: Assemble ${{ github.event_name == 'workflow_dispatch' && inputs.build_type || 'debug' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -37,7 +43,7 @@ jobs:
           if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
             echo "gradle-wrapper.jar missing; downloading for Gradle 9.6.0"
             mkdir -p gradle/wrapper
-            curl -fsSL -o gradle/wrapper/gradle-wrapper.jar \
+            curl -fsSL -o gradle/wrapper/gradle-wrapper.jar \\
               "https://github.com/gradle/gradle/raw/v9.6.0/gradle/wrapper/gradle-wrapper.jar"
           fi
           test -f gradle/wrapper/gradle-wrapper.jar
@@ -49,45 +55,45 @@ jobs:
           cache-read-only: false
 
       - name: Run Core Model contract tests
-        if: inputs.build_type == 'debug'
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :core:model:test --stacktrace --no-daemon
 
       - name: Run Core Data contract tests
-        if: inputs.build_type == 'debug'
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :core:data:testDebugUnitTest --stacktrace --no-daemon
 
       - name: Run Format API unit tests
-        if: inputs.build_type == 'debug'
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :engine:format-api:testDebugUnitTest --stacktrace --no-daemon
 
       - name: Run Layout Engine unit tests
-        if: inputs.build_type == 'debug'
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :engine:layout:testDebugUnitTest --stacktrace --no-daemon
 
       - name: Run Render Engine unit tests
-        if: inputs.build_type == 'debug'
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :engine:render:testDebugUnitTest --stacktrace --no-daemon
 
       - name: Run Markdown Engine unit tests
-        if: inputs.build_type == 'debug'
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :engine:format-markdown:testDebugUnitTest --stacktrace --no-daemon
 
       - name: Run EPUB Engine unit tests
-        if: inputs.build_type == 'debug'
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :engine:format-epub:testDebugUnitTest --stacktrace --no-daemon
 
       - name: Assemble Debug
-        if: inputs.build_type == 'debug'
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
       - name: Assemble Release
-        if: inputs.build_type == 'release'
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
         run: ./gradlew :app:assembleRelease --stacktrace --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-${{ inputs.build_type }}
+          name: app-${{ github.event_name == 'workflow_dispatch' && inputs.build_type || 'debug' }}
           path: |
             app/build/outputs/apk/**/*.apk
             app/build/outputs/bundle/**/*.aab
