@@ -2,7 +2,9 @@
 
 纯本地、高性能 Android 阅读器（EPUB / PDF / Markdown / TXT）。
 
-总体应用架构见 [reader-architecture.md](docs/reader-architecture.md)。\n\n**阅读引擎最终架构规范：** [reader-engine-architecture.md](docs/reader-engine-architecture.md)。新增格式、替换解析库、调整分页/渲染时必须遵守该规范。
+总体应用架构见 [reader-architecture.md](docs/reader-architecture.md)。
+
+**阅读引擎最终架构规范：** [reader-engine-architecture.md](docs/reader-engine-architecture.md)。新增格式、替换解析库、调整分页/渲染时必须遵守该规范。
 
 ## 技术栈
 
