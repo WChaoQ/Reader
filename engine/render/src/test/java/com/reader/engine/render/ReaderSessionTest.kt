@@ -6,6 +6,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -52,6 +53,7 @@ class ReaderSessionTest {
 
     @Test
     fun closeWaitsForSessionTasksBeforeClosingEngine() = runBlocking {
+        val taskStarted = CompletableDeferred<Unit>()
         val taskFinished = CompletableDeferred<Unit>()
         val engine = FakeReaderEngine {
             assertTrue("Session task must finish before engine cleanup", taskFinished.isCompleted)
@@ -59,6 +61,7 @@ class ReaderSessionTest {
         val session = ReaderSession(engine)
 
         session.launchTask {
+            taskStarted.complete(Unit)
             try {
                 awaitCancellation()
             } finally {
@@ -66,6 +69,9 @@ class ReaderSessionTest {
             }
         }
 
+        // Ensure this test exercises an in-flight task, not a task cancelled
+        // before its coroutine body has started on the inherited dispatcher.
+        withTimeout(2_000) { taskStarted.await() }
         session.closeAndJoin()
 
         assertTrue(taskFinished.isCompleted)
