@@ -31,7 +31,7 @@
 
 ## CI
 
-GitHub Actions 工作流 `Build App` 为 **手动触发**（`workflow_dispatch`），可选择 debug / release。
+GitHub Actions 工作流 `Build App` 会在向 `feature/reader-open-parse-render` 分支推送提交或向该分支创建 Pull Request 时自动运行 Debug 测试与构建；也支持通过 `workflow_dispatch` 手动选择 debug / release。
 
 ## 约束
 
