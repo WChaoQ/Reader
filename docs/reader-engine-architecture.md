@@ -363,7 +363,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 - 新增 Core Model 契约测试、Markdown / XHTML Span 偏移回归测试、PageCountInfo 测试和历史 Progress / Bookmark Locator 有界修复测试；GitHub Actions 加入 Core Model、Core Data、Format API、Render、Markdown、EPUB 等契约测试。
 
 阶段 A 尚需验收：
-- 必须由用户手动运行 GitHub Actions，确认新增测试和全项目编译通过；本轮没有触发构建。
+- 该记录写入时工作流仍为手动触发，尚未取得构建结果；自 2026-11-14 起，目标分支的 push / Pull Request 会自动触发 Debug 测试与构建。
 - 真实 EPUB fixture 仍需覆盖嵌套标签、混合空白、非 ASCII / emoji、链接和粗斜体重叠范围。
 - 已在 Progress / Bookmark 读取映射处对历史负索引、负 offset、非有限或越界 progression 做有界修复；仍需在实际设备验证真实数据库数据和恢复行为。
 
@@ -393,7 +393,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 
 阶段 B 尚需验收：
 - 补充 ReaderSessionFactory 的资源回滚测试，以及快速连续切换、取消打开、PDF 渲染中关闭等集成/设备测试。
-- 需要在用户手动触发 GitHub Actions 后确认编译和测试结果；本次没有触发构建。
+- 该记录写入时尚未取得构建结果；自 2026-11-14 起，目标分支的 push / Pull Request 会自动触发 Debug 测试与构建。
 - 确认不同 DocumentProvider 下 PDF / EPUB 随机访问和权限撤销的异常路径。
 
 阶段边界：

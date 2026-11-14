@@ -1,5 +1,6 @@
 package com.reader.feature.reader
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -50,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -68,6 +70,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reader.core.ui.PageCanvas
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -89,6 +92,30 @@ fun ReaderRoute(
     val density = LocalDensity.current
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var exitInProgress by remember { mutableStateOf(false) }
+
+    fun saveAndBack() {
+        if (exitInProgress) return
+        exitInProgress = true
+        scope.launch {
+            try {
+                viewModel.saveProgressAndWait()
+                onBack()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                exitInProgress = false
+                snackbar.showSnackbar("阅读进度保存失败，请重试")
+            }
+        }
+    }
+
+    BackHandler(
+        enabled = !exitInProgress &&
+            !state.tocVisible && !state.bookmarksVisible && !state.searchVisible,
+    ) {
+        saveAndBack()
+    }
 
     LaunchedEffect(state.snackbar) {
         state.snackbar?.let {
@@ -456,10 +483,10 @@ fun ReaderRoute(
                                 )
                             },
                             navigationIcon = {
-                                IconButton(onClick = {
-                                    viewModel.onEvent(ReaderEvent.ForceSaveProgress)
-                                    onBack()
-                                }) {
+                                IconButton(
+                                    onClick = { saveAndBack() },
+                                    enabled = !exitInProgress,
+                                ) {
                                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                                 }
                             },

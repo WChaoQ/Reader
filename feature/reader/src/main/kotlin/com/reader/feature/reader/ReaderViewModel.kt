@@ -21,6 +21,7 @@ import com.reader.engine.render.ReaderEngine
 import com.reader.engine.render.ReaderSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
 import java.util.concurrent.atomic.AtomicLong
@@ -184,7 +185,7 @@ class ReaderViewModel @Inject constructor(
             is ReaderEvent.DeleteBookmark -> viewModelScope.launch { bookmarkRepository.delete(event.id) }
             is ReaderEvent.Search -> runSearch(event.query)
             ReaderEvent.ClearSnackbar -> _state.update { it.copy(snackbar = null) }
-            ReaderEvent.ForceSaveProgress -> saveProgressNow()
+            ReaderEvent.ForceSaveProgress -> viewModelScope.launch { saveProgressAndWait() }
         }
     }
 
@@ -237,7 +238,7 @@ class ReaderViewModel @Inject constructor(
                     source.loadChapter(ch)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
-                } catch (_: Throwable) {
+                } catch (_: Exception) {
                     continue
                 }
                 val plain = chapter.blocks.joinToString("\n") {
@@ -290,17 +291,32 @@ class ReaderViewModel @Inject constructor(
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(500)
-            saveProgressNow()
+            if (engine == null) return@launch
+            persistProgress(currentLocator)
+        }
+    }
+
+    private suspend fun persistProgress(locator: Locator) {
+        progressRepository.save(bookId, locator)
+        bookRepository.updateLastRead(bookId, System.currentTimeMillis())
+    }
+
+    /**
+     * Persist the last fully selected page before leaving the reader.
+     * A pending page render is cancelled so it cannot race the final save.
+     */
+    suspend fun saveProgressAndWait() {
+        withContext(NonCancellable) {
+            pageJumpJob?.cancelAndJoin()
+            saveJob?.cancelAndJoin()
+            if (engine != null) persistProgress(currentLocator)
         }
     }
 
     private fun saveProgressNow() {
-        val eng = engine ?: return
+        if (engine == null) return
         val locator = currentLocator
-        viewModelScope.launch {
-            progressRepository.save(bookId, locator)
-            bookRepository.updateLastRead(bookId, System.currentTimeMillis())
-        }
+        viewModelScope.launch { persistProgress(locator) }
     }
 
     private suspend fun open(startLocator: Locator? = null) {
@@ -406,11 +422,17 @@ class ReaderViewModel @Inject constructor(
                     it.copy(isLoading = false, error = "原文件已移动或删除，请重新选择文档")
                 }
             }
-        } catch (t: Throwable) {
+        } catch (failure: Error) {
             if (openGeneration.get() == generation) {
                 withContext(NonCancellable) { session?.closeAndJoin() }
                 session = null
-                _state.update { it.copy(isLoading = false, error = t.message ?: "打开失败") }
+            }
+            throw failure
+        } catch (failure: Exception) {
+            if (openGeneration.get() == generation) {
+                withContext(NonCancellable) { session?.closeAndJoin() }
+                session = null
+                _state.update { it.copy(isLoading = false, error = failure.message ?: "打开失败") }
             }
         }
     }
