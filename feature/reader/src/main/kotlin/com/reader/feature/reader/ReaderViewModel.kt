@@ -21,9 +21,11 @@ import com.reader.engine.render.ReaderEngine
 import com.reader.engine.render.ReaderSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -313,10 +315,23 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Best-effort fallback for ViewModel teardown. viewModelScope is already cancelled
+     * when onCleared runs, so this final write needs a short independent IO scope.
+     * Normal navigation still uses saveProgressAndWait() and waits for confirmation.
+     */
     private fun saveProgressNow() {
         if (engine == null) return
         val locator = currentLocator
-        viewModelScope.launch { persistProgress(locator) }
+        CoroutineScope(SupervisorJob() + dispatchers.io).launch {
+            try {
+                persistProgress(locator)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // There is no longer a UI to report a best-effort teardown failure to.
+            }
+        }
     }
 
     private suspend fun open(startLocator: Locator? = null) {
