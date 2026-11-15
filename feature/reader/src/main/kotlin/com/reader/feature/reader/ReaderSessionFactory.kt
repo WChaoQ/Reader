@@ -17,6 +17,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import android.os.ParcelFileDescriptor
@@ -54,21 +56,33 @@ class ReaderSessionFactory @Inject constructor(
                 BookFormat.PDF -> {
                     val openedDescriptor = sourceRepository.openPdfDescriptor(book)
                     descriptor = openedDescriptor
-                    val fixed = FixedEngine(
-                        pfd = openedDescriptor,
-                        pageWidthPx = layoutConfig.pageWidthPx,
-                        theme = theme,
-                        initialPageIndex = initialLocator.chapter,
-                        ioDispatcher = dispatchers.io,
-                        onPageRendered = onPageRendered,
-                    )
+                    // PdfRenderer construction can parse document metadata and must not
+                    // run on the UI thread. Keep construction non-cancellable until the
+                    // newly created engine is handed to this factory for rollback/cleanup.
+                    val fixed = withContext(NonCancellable + dispatchers.io) {
+                        FixedEngine(
+                            pfd = openedDescriptor,
+                            pageWidthPx = layoutConfig.pageWidthPx,
+                            theme = theme,
+                            initialPageIndex = initialLocator.chapter,
+                            ioDispatcher = dispatchers.io,
+                            onPageRendered = onPageRendered,
+                        )
+                    }
                     descriptor = null // Ownership transferred to FixedEngine.
                     engine = fixed
                     require(fixed.pageCount.value.exact?.let { it > 0 } == true) {
                         "PDF 文档没有可读取的页面"
                     }
-                    toc = (0 until fixed.pageCount.value.display).map { page ->
-                        TocEntry("第 ${page + 1} 页", Locator(page, 0))
+                    val pageCount = fixed.pageCount.value.display
+                    toc = withContext(dispatchers.default) {
+                        val context = currentCoroutineContext()
+                        buildList(pageCount) {
+                            for (page in 0 until pageCount) {
+                                context.ensureActive()
+                                add(TocEntry("第 ${page + 1} 页", Locator(page, 0)))
+                            }
+                        }
                     }
                 }
 
@@ -77,7 +91,9 @@ class ReaderSessionFactory @Inject constructor(
                     source = openedSource
                     sessionSource = openedSource
                     toc = try {
-                        openedSource.toc()
+                        // A document may contain thousands of chapters. Build the TOC
+                        // away from Main so opening the reader cannot block first frame.
+                        withContext(dispatchers.default) { openedSource.toc() }
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
