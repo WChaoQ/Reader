@@ -18,6 +18,7 @@ import com.reader.engine.layout.LayoutConfig
 import com.reader.engine.render.PageCountInfo
 import com.reader.engine.render.ReaderCapability
 import com.reader.engine.render.ReaderEngine
+import com.reader.engine.render.ReaderEngineFailure
 import com.reader.engine.render.ReaderSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -473,6 +474,30 @@ class ReaderViewModel @Inject constructor(
                 session = null
                 _state.update {
                     it.copy(isLoading = false, error = "原文件已移动或删除，请重新选择文档")
+                }
+            }
+        } catch (failure: OutOfMemoryError) {
+            // Engine implementations report asynchronous OOM through their typed failure
+            // flow. This boundary handles OOM raised before a Session can be returned
+            // (for example, while constructing PdfRenderer or building the initial TOC).
+            if (openGeneration.get() == generation) {
+                withContext(NonCancellable) {
+                    try {
+                        session?.closeAndJoin()
+                    } catch (_: Exception) {
+                        // Keep the recoverable opening error visible; the factory already
+                        // rolls back resources when it fails before returning a Session.
+                    }
+                }
+                session = null
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        pageReady = false,
+                        error = ReaderEngineFailure.fromOutOfMemoryError(
+                            "文档过大或设备内存不足，无法打开，请关闭其他应用后重试",
+                        ).message,
+                    )
                 }
             }
         } catch (failure: Error) {
