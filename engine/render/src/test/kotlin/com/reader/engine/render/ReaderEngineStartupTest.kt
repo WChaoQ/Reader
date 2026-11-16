@@ -57,6 +57,19 @@ class ReaderEngineStartupTest {
     }
 
     @Test
+    fun outOfMemoryFailureCompletesOpeningWaiterWithRecoverableCategory() = runBlocking {
+        val engine = TestReaderEngine()
+        val failure = ReaderEngineFailure.fromOutOfMemoryError(
+            "文档过大或设备内存不足，无法完成分页，请重试",
+        )
+
+        engine.failure.value = failure
+
+        assertEquals(failure, withTimeout(2_000) { engine.awaitReadyOrFailure() })
+        assertEquals(ReaderEngineFailureKind.OUT_OF_MEMORY_RISK, failure.kind)
+    }
+
+    @Test
     fun unsupportedCapabilityKeepsExplicitProviderMessage() {
         val failure = ReaderEngineFailure.fromException(
             UnsupportedOperationException("此文件提供程序不支持随机访问"),
