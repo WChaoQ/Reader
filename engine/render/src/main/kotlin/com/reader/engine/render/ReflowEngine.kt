@@ -121,6 +121,12 @@ class ReflowEngine(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (failure: OutOfMemoryError) {
+                if (!closed && generation.get() == runGeneration) {
+                    _failure.value = ReaderEngineFailure.fromOutOfMemoryError(
+                        "文档过大或设备内存不足，无法完成分页，请重试",
+                    )
+                }
             } catch (failure: Exception) {
                 if (!closed && generation.get() == runGeneration) {
                     _failure.value = ReaderEngineFailure.fromException(
@@ -190,6 +196,12 @@ class ReflowEngine(
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
+                } catch (failure: OutOfMemoryError) {
+                    if (!closed && generation.get() == requestedGeneration) {
+                        _failure.value = ReaderEngineFailure.fromOutOfMemoryError(
+                            "章节过大或设备内存不足，无法完成排版，请重试",
+                        )
+                    }
                 } catch (failure: Exception) {
                     if (!closed && generation.get() == requestedGeneration) {
                         _failure.value = ReaderEngineFailure.fromException(

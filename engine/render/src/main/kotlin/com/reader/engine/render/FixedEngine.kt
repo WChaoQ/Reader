@@ -209,12 +209,15 @@ class FixedEngine(
         if (renderJobs.containsKey(pageIndex)) return
 
         val job = renderScope.launch(start = CoroutineStart.LAZY) {
+            var renderedBitmap: Bitmap? = null
             try {
-                val bitmap = renderBitmap(pageIndex, pageWidthPx)
+                renderedBitmap = renderBitmap(pageIndex, pageWidthPx)
+                val bitmap = renderedBitmap
                 if (bitmap != null && !closed) {
                     synchronized(bitmapCache) {
                         bitmapCache.put(pageIndex, bitmap)
                     }
+                    renderedBitmap = null // Ownership transferred to the cache.
                     if (pageIndex == initialPageIndex.coerceIn(0, (pageTotal - 1).coerceAtLeast(0))) {
                         _ready.value = true
                     }
@@ -223,7 +226,8 @@ class FixedEngine(
                         if (!closed) onPageRendered()
                     }
                 } else {
-                    bitmap?.recycle()
+                    renderedBitmap?.let { if (!it.isRecycled) it.recycle() }
+                    renderedBitmap = null
                     if (!closed && _failure.value == null) {
                         _failure.value = ReaderEngineFailure(
                             ReaderEngineFailureKind.INTERNAL_FAILURE,
@@ -233,9 +237,19 @@ class FixedEngine(
                     pageWaiters.remove(pageIndex)?.complete(false)
                 }
             } catch (cancelled: CancellationException) {
+                renderedBitmap?.let { if (!it.isRecycled) it.recycle() }
                 pageWaiters.remove(pageIndex)?.complete(false)
                 throw cancelled
+            } catch (failure: OutOfMemoryError) {
+                renderedBitmap?.let { if (!it.isRecycled) it.recycle() }
+                if (!closed) {
+                    _failure.value = ReaderEngineFailure.fromOutOfMemoryError(
+                        "PDF 页面过大或设备内存不足，无法完成渲染，请重试",
+                    )
+                }
+                pageWaiters.remove(pageIndex)?.complete(false)
             } catch (failure: Exception) {
+                renderedBitmap?.let { if (!it.isRecycled) it.recycle() }
                 if (!closed) {
                     _failure.value = ReaderEngineFailure.fromException(
                         failure,
@@ -256,6 +270,7 @@ class FixedEngine(
 
     private suspend fun renderBitmap(pageIndex: Int, targetWidth: Int): Bitmap? = mutex.withLock {
         if (closed || pageIndex !in 0 until pageTotal) return null
+        var bitmap: Bitmap? = null
         return try {
             renderer.openPage(pageIndex).use { page ->
                 val requestedWidth = targetWidth.coerceAtLeast(1)
@@ -270,14 +285,25 @@ class FixedEngine(
                 }
                 val width = (requestedWidth * reduction).toInt().coerceAtLeast(1)
                 val height = (requestedHeight * reduction).toInt().coerceAtLeast(1)
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                bitmap.eraseColor(Color.WHITE)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                bitmap
+                val createdBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                bitmap = createdBitmap
+                createdBitmap.eraseColor(Color.WHITE)
+                page.render(createdBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                createdBitmap
             }
         } catch (cancelled: CancellationException) {
+            bitmap?.let { if (!it.isRecycled) it.recycle() }
             throw cancelled
+        } catch (failure: OutOfMemoryError) {
+            bitmap?.let { if (!it.isRecycled) it.recycle() }
+            if (!closed) {
+                _failure.value = ReaderEngineFailure.fromOutOfMemoryError(
+                    "PDF 页面过大或设备内存不足，无法完成渲染，请重试",
+                )
+            }
+            null
         } catch (failure: Exception) {
+            bitmap?.let { if (!it.isRecycled) it.recycle() }
             if (!closed) {
                 _failure.value = ReaderEngineFailure.fromException(
                     failure,

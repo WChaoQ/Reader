@@ -41,6 +41,7 @@ enum class ReaderEngineFailureKind {
     SOURCE_UNAVAILABLE,
     INVALID_DOCUMENT,
     UNSUPPORTED_CAPABILITY,
+    OUT_OF_MEMORY_RISK,
     INTERNAL_FAILURE,
 }
 
@@ -53,6 +54,13 @@ data class ReaderEngineFailure(
     }
 
     companion object {
+        fun fromOutOfMemoryError(
+            message: String = "文档过大或设备内存不足，请关闭其他应用后重试",
+        ): ReaderEngineFailure = ReaderEngineFailure(
+            ReaderEngineFailureKind.OUT_OF_MEMORY_RISK,
+            message,
+        )
+
         fun fromException(
             failure: Exception,
             fallbackMessage: String,
