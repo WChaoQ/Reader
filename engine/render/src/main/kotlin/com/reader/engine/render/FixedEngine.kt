@@ -13,6 +13,7 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.LruCache
 import com.reader.core.model.Locator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -104,8 +107,10 @@ class FixedEngine(
 
     // Ready means the requested opening page has a completed bitmap, not merely that
     // PdfRenderer was constructed. The UI can safely leave its loading state then.
-    private val _ready = kotlinx.coroutines.flow.MutableStateFlow(false)
-    override val ready: kotlinx.coroutines.flow.StateFlow<Boolean> = _ready
+    private val _ready = MutableStateFlow(false)
+    override val ready: StateFlow<Boolean> = _ready
+    private val _failure = MutableStateFlow<ReaderEngineFailure?>(null)
+    override val failure: StateFlow<ReaderEngineFailure?> = _failure
     override val capabilities: Set<ReaderCapability> = emptySet()
 
     init {
@@ -219,9 +224,24 @@ class FixedEngine(
                     }
                 } else {
                     bitmap?.recycle()
+                    if (!closed && _failure.value == null) {
+                        _failure.value = ReaderEngineFailure(
+                            ReaderEngineFailureKind.INTERNAL_FAILURE,
+                            "PDF 页面渲染失败，请重试",
+                        )
+                    }
                     pageWaiters.remove(pageIndex)?.complete(false)
                 }
-            } catch (_: Exception) {
+            } catch (cancelled: CancellationException) {
+                pageWaiters.remove(pageIndex)?.complete(false)
+                throw cancelled
+            } catch (failure: Exception) {
+                if (!closed) {
+                    _failure.value = ReaderEngineFailure.fromException(
+                        failure,
+                        "PDF 页面渲染失败，请重试",
+                    )
+                }
                 pageWaiters.remove(pageIndex)?.complete(false)
             } finally {
                 renderJobs.remove(pageIndex)
@@ -255,7 +275,15 @@ class FixedEngine(
                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 bitmap
             }
-        } catch (_: Exception) {
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (!closed) {
+                _failure.value = ReaderEngineFailure.fromException(
+                    failure,
+                    "PDF 页面渲染失败，请重试",
+                )
+            }
             null
         }
     }

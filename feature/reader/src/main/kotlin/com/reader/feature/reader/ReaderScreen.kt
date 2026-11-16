@@ -44,6 +44,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -159,11 +160,24 @@ fun ReaderRoute(
             )
         }
         when {
-            state.error != null -> Text(
-                text = state.error!!,
+            state.error != null -> Column(
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                style = MaterialTheme.typography.bodyLarge,
-            )
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = state.error!!,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Spacer(Modifier.height(12.dp))
+                Row {
+                    TextButton(onClick = { viewModel.onEvent(ReaderEvent.RetryOpen) }) {
+                        Text("重试")
+                    }
+                    TextButton(onClick = { saveAndBack() }) {
+                        Text("返回书库")
+                    }
+                }
+            }
             state.isLoading || !state.pageReady -> CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
             )

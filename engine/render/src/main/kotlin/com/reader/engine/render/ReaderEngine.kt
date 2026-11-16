@@ -2,7 +2,11 @@ package com.reader.engine.render
 
 import android.graphics.Canvas
 import com.reader.core.model.Locator
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 
 data class PageCountInfo(
     val exact: Int? = null,
@@ -31,6 +35,54 @@ enum class ReaderCapability {
     LINK_ACTIVATION,
 }
 
+/** Stable, format-neutral failure categories exposed by the rendering facade. */
+enum class ReaderEngineFailureKind {
+    PERMISSION_REVOKED,
+    SOURCE_UNAVAILABLE,
+    INVALID_DOCUMENT,
+    UNSUPPORTED_CAPABILITY,
+    INTERNAL_FAILURE,
+}
+
+data class ReaderEngineFailure(
+    val kind: ReaderEngineFailureKind,
+    val message: String,
+) {
+    init {
+        require(message.isNotBlank()) { "Reader engine failure message must not be blank" }
+    }
+
+    companion object {
+        fun fromException(
+            failure: Exception,
+            fallbackMessage: String,
+        ): ReaderEngineFailure {
+            val (kind, message) = when (failure) {
+                is SecurityException ->
+                    ReaderEngineFailureKind.PERMISSION_REVOKED to
+                        "无法访问原文件，请重新授权或重新选择文档"
+                is java.io.FileNotFoundException ->
+                    ReaderEngineFailureKind.SOURCE_UNAVAILABLE to
+                        "原文件已移动或删除，请重新选择文档"
+                is UnsupportedOperationException ->
+                    ReaderEngineFailureKind.UNSUPPORTED_CAPABILITY to
+                        (failure.message?.takeIf { it.isNotBlank() } ?: fallbackMessage)
+                is IllegalArgumentException ->
+                    ReaderEngineFailureKind.INVALID_DOCUMENT to
+                        "文档无效或内容损坏，无法继续读取"
+                else ->
+                    ReaderEngineFailureKind.INTERNAL_FAILURE to fallbackMessage
+            }
+            return ReaderEngineFailure(kind, message)
+        }
+    }
+}
+
+private object ReaderEngineFailureDefaults {
+    val none: StateFlow<ReaderEngineFailure?> =
+        MutableStateFlow<ReaderEngineFailure?>(null).asStateFlow()
+}
+
 sealed interface HitResult {
     data class TextOffset(val chapter: Int, val offset: Int) : HitResult
     data class Link(val href: String) : HitResult
@@ -48,6 +100,18 @@ interface ReaderEngine {
     /** Explicitly advertises optional operations; callers must not infer support from empty results. */
     val capabilities: Set<ReaderCapability>
     val ready: StateFlow<Boolean>
+    /** A typed failure emitted when asynchronous opening, layout, or rendering fails. */
+    val failure: StateFlow<ReaderEngineFailure?>
+        get() = ReaderEngineFailureDefaults.none
+
+    /**
+     * Completes when the opening page is ready or a failure is available.
+     * A failed open must never leave callers waiting indefinitely on [ready].
+     */
+    suspend fun awaitReadyOrFailure(): ReaderEngineFailure? =
+        combine(ready, failure) { isReady, openFailure -> isReady to openFailure }
+            .first { (isReady, openFailure) -> isReady || openFailure != null }
+            .second
 
     /** Resolves a global page index to the stable document position. */
     fun locatorOf(pageIndex: Int): Locator

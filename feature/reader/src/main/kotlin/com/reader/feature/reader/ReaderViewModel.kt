@@ -31,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -79,6 +80,7 @@ sealed interface ReaderEvent {
     data class Search(val query: String) : ReaderEvent
     data object ClearSnackbar : ReaderEvent
     data object ForceSaveProgress : ReaderEvent
+    data object RetryOpen : ReaderEvent
 }
 
 @HiltViewModel
@@ -188,6 +190,7 @@ class ReaderViewModel @Inject constructor(
             is ReaderEvent.Search -> runSearch(event.query)
             ReaderEvent.ClearSnackbar -> _state.update { it.copy(snackbar = null) }
             ReaderEvent.ForceSaveProgress -> viewModelScope.launch { saveProgressAndWait() }
+            ReaderEvent.RetryOpen -> retryOpen()
         }
     }
 
@@ -334,6 +337,12 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    private fun retryOpen() {
+        if (_state.value.isLoading) return
+        openJob?.cancel()
+        openJob = viewModelScope.launch { open(currentLocator) }
+    }
+
     private suspend fun open(startLocator: Locator? = null) {
         openMutex.withLock { openInternal(startLocator) }
     }
@@ -393,7 +402,25 @@ class ReaderViewModel @Inject constructor(
             // Both reflow and fixed-layout engines become ready only when the opening
             // page is actually drawable. In particular, PDF construction alone is not
             // sufficient because its first bitmap is rendered asynchronously.
-            eng.ready.first { it }
+            val openingFailure = eng.awaitReadyOrFailure()
+            if (openingFailure != null) {
+                withContext(NonCancellable) {
+                    try {
+                        openedSession.closeAndJoin()
+                    } catch (_: Exception) {
+                        // Preserve the user-facing opening failure; cleanup remains best effort.
+                    }
+                }
+                if (session === openedSession) session = null
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        pageReady = false,
+                        error = openingFailure.message,
+                    )
+                }
+                return
+            }
             val startPage = eng.pageIndexOf(saved)
             _state.update {
                 it.copy(
@@ -408,11 +435,22 @@ class ReaderViewModel @Inject constructor(
                 )
             }
             engineObserveJob = viewModelScope.launch {
-                eng.pageCount.collect { info ->
-                    if (openGeneration.get() != generation || session?.engine !== eng) return@collect
-                    val resolvedPage = eng.pageIndexOf(currentLocator)
-                    _state.update { s -> s.copy(pageCount = info, currentPage = resolvedPage) }
-                }
+                combine(eng.pageCount, eng.failure) { info, failure -> info to failure }
+                    .collect { (info, failure) ->
+                        if (openGeneration.get() != generation || session?.engine !== eng) return@collect
+                        if (failure != null) {
+                            _state.update {
+                                it.copy(
+                                    isLoading = false,
+                                    pageReady = false,
+                                    error = failure.message,
+                                )
+                            }
+                        } else {
+                            val resolvedPage = eng.pageIndexOf(currentLocator)
+                            _state.update { s -> s.copy(pageCount = info, currentPage = resolvedPage) }
+                        }
+                    }
             }
             bookRepository.updateLastRead(bookId, System.currentTimeMillis())
         } catch (cancelled: CancellationException) {

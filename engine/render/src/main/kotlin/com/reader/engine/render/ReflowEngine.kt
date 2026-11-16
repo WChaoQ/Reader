@@ -11,6 +11,7 @@ import com.reader.engine.layout.PageSlice
 import com.reader.engine.layout.PaginationEvent
 import com.reader.engine.layout.Paginator
 import com.reader.engine.layout.StaticLayoutFactory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -42,6 +43,8 @@ class ReflowEngine(
 
     private val _ready = MutableStateFlow(false)
     override val ready: StateFlow<Boolean> = _ready.asStateFlow()
+    private val _failure = MutableStateFlow<ReaderEngineFailure?>(null)
+    override val failure: StateFlow<ReaderEngineFailure?> = _failure.asStateFlow()
     override val capabilities: Set<ReaderCapability> = setOf(
         ReaderCapability.PAGE_TEXT,
         ReaderCapability.FULL_TEXT_SEARCH,
@@ -74,44 +77,56 @@ class ReflowEngine(
         chapterPages.clear()
         synchronized(layoutLock) { layouts.evictAll() }
         _ready.value = false
+        _failure.value = null
         _pageCount.value = PageCountInfo(estimated = source.chapterCount.coerceAtLeast(1), available = 0)
 
         paginateJob = scope.launch {
-            paginator.paginate(source, config, start, bookId).collect { event ->
-                if (closed || generation.get() != runGeneration) return@collect
-                when (event) {
-                    is PaginationEvent.ChapterReady -> {
-                        val chapter = event.chapter
-                        val layout = buildChapterLayout(chapter, event.pages)
-                        if (closed || generation.get() != runGeneration) return@collect
-                        putLayout(chapter.index, layout)
-                        chapterPages[chapter.index] = event.pages
-                        chapterPageCounts[chapter.index] = event.pages.size.coerceAtLeast(1)
-                        rebuildPageIndex()
-                        if (chapter.index == start.chapter) {
+            try {
+                paginator.paginate(source, config, start, bookId).collect { event ->
+                    if (closed || generation.get() != runGeneration) return@collect
+                    when (event) {
+                        is PaginationEvent.ChapterReady -> {
+                            val chapter = event.chapter
+                            val layout = buildChapterLayout(chapter, event.pages)
+                            if (closed || generation.get() != runGeneration) return@collect
+                            putLayout(chapter.index, layout)
+                            chapterPages[chapter.index] = event.pages
+                            chapterPageCounts[chapter.index] = event.pages.size.coerceAtLeast(1)
+                            rebuildPageIndex()
+                            if (chapter.index == start.chapter) {
+                                _ready.value = true
+                                onLayoutReady()
+                            }
+                        }
+                        is PaginationEvent.Progress -> {
+                            val avg = chapterPageCounts.values.average().let {
+                                if (it.isNaN()) 1.0 else it
+                            }
+                            val estimated = (avg * source.chapterCount).toInt().coerceAtLeast(1)
+                            val available = pageIndexSnapshot.size
+                            _pageCount.value = PageCountInfo(
+                                exact = null,
+                                estimated = maxOf(estimated, available),
+                                available = available,
+                            )
+                        }
+                        PaginationEvent.Completed -> {
+                            rebuildPageIndex()
+                            val available = pageIndexSnapshot.size
+                            _pageCount.value = PageCountInfo(exact = available, available = available)
                             _ready.value = true
                             onLayoutReady()
                         }
                     }
-                    is PaginationEvent.Progress -> {
-                        val avg = chapterPageCounts.values.average().let {
-                            if (it.isNaN()) 1.0 else it
-                        }
-                        val estimated = (avg * source.chapterCount).toInt().coerceAtLeast(1)
-                        val available = pageIndexSnapshot.size
-                        _pageCount.value = PageCountInfo(
-                            exact = null,
-                            estimated = maxOf(estimated, available),
-                            available = available,
-                        )
-                    }
-                    PaginationEvent.Completed -> {
-                        rebuildPageIndex()
-                        val available = pageIndexSnapshot.size
-                        _pageCount.value = PageCountInfo(exact = available, available = available)
-                        _ready.value = true
-                        onLayoutReady()
-                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (!closed && generation.get() == runGeneration) {
+                    _failure.value = ReaderEngineFailure.fromException(
+                        failure,
+                        "文档分页失败，请重试",
+                    )
                 }
             }
         }
@@ -172,6 +187,15 @@ class ReflowEngine(
                     if (!closed && generation.get() == requestedGeneration) {
                         putLayout(chapter, layout)
                         onLayoutReady()
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    if (!closed && generation.get() == requestedGeneration) {
+                        _failure.value = ReaderEngineFailure.fromException(
+                            failure,
+                            "章节加载失败，请重试",
+                        )
                     }
                 } finally {
                     coroutineContext[Job]?.let { layoutJobs.remove(chapter, it) }

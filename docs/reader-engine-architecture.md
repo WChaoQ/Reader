@@ -174,6 +174,8 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 
 - pageCount（exact / estimated / available）
 - ready 状态
+- typed failure（错误类别 + 面向用户的恢复提示），可在首屏就绪前或后报告异步失败
+- awaitReadyOrFailure()：首屏 ready 或 failure 到达时必须结束等待，不能因渲染失败永久停留在加载态
 - locatorOf(pageIndex)、pageIndexOf(locator)
 - 请求/绘制指定页面
 - 可选 pageText、hitTest、selection capability
@@ -360,6 +362,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 - BookSourceRepository 为 withContext 返回阶段可能发生的取消增加资源回收保护，避免 Source / PFD 已创建却未交给调用方。
 - 审核 TXT / Markdown / EPUB / PDF Source：EPUB Publication 操作串行化且 close 幂等；PDF Source 访问与关闭串行化且 close 幂等；TXT / Markdown 使用独立流或不可变解析结果。
 - Reader Feature 不直接引用 Readium 类型；Readium 仍封装在 EPUB Adapter 内。ReaderViewModel 通过 ReaderEngine capability 检查全文搜索能力。
+- ReaderEngine 以 typed failure StateFlow 暴露异步打开/布局/渲染错误；Reflow / Fixed 引擎映射错误类别，ViewModel 提供重试和返回书库入口，CancellationException 继续传播（2026-11-16，本轮待 CI 验证）。
 - 新增 Core Model 契约测试、Markdown / XHTML Span 偏移回归测试、PageCountInfo 测试和历史 Progress / Bookmark Locator 有界修复测试；GitHub Actions 加入 Core Model、Core Data、Format API、Render、Markdown、EPUB 等契约测试。
 
 阶段 A 尚需验收：
@@ -386,6 +389,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 - 新增 `ReaderEngine.awaitPage` 和 `closeAndJoin` 统一能力；ReaderViewModel 不再判断 FixedEngine 类型。
 - Reflow / Fixed 引擎均支持等待关闭完成；Reflow 关闭时串行化任务注册与关闭快照，避免新布局任务漏出清理集合；Fixed 关闭时等待 PdfRenderer 使用互斥锁退出后再释放 Descriptor。
 - ReaderViewModel 只保存 Session；Engine 是从 Session 派生的只读访问属性，不再单独持有 Engine 或 Source。
+- ReaderViewModel 使用 awaitReadyOrFailure() 等待首屏；异步打开失败时清理失败 Session 并展示可重试错误，避免 ready 永不变为 true 时永久加载（2026-11-16，本轮待 CI 验证）。
 - 打开流程通过 Mutex 串行化；generation token 阻止旧会话的布局回调和页数更新污染新会话。
 - 新文档打开前先从 ViewModel 脱离旧 Session，等待旧 Session 的任务与资源全部清理，再创建新会话。
 - 新增 Session 幂等关闭、任务取消、关闭后访问拒绝、关闭等待任务退出等单元测试；GitHub Actions 已纳入 Render Engine 单元测试。
