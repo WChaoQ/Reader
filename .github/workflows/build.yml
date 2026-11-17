@@ -73,6 +73,10 @@ jobs:
       - name: Run Render Engine unit tests
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :engine:render:testDebugUnitTest --stacktrace --no-daemon
+ 
+      - name: Run Reader Feature unit tests
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
+        run: ./gradlew :feature:reader:testDebugUnitTest --stacktrace --no-daemon
 
       - name: Run Markdown Engine unit tests
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'

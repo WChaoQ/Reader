@@ -13,6 +13,7 @@ import com.reader.engine.render.ReaderEngine
 import com.reader.engine.render.ReaderSession
 import com.reader.engine.render.ReflowEngine
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -59,18 +60,30 @@ class ReaderSessionFactory @Inject constructor(
                     // PdfRenderer construction can parse document metadata and must not
                     // run on the UI thread. Keep construction non-cancellable until the
                     // newly created engine is handed to this factory for rollback/cleanup.
-                    val fixed = withContext(NonCancellable + dispatchers.io) {
-                        FixedEngine(
-                            pfd = openedDescriptor,
-                            pageWidthPx = layoutConfig.pageWidthPx,
-                            theme = theme,
-                            initialPageIndex = initialLocator.chapter,
-                            ioDispatcher = dispatchers.io,
-                            onPageRendered = onPageRendered,
-                        )
-                    }
-                    descriptor = null // Ownership transferred to FixedEngine.
-                    engine = fixed
+                    val fixed = createAndTransferOwnership(
+                        dispatcher = dispatchers.io,
+                        create = {
+                            // FixedEngine.create takes ownership and guarantees rollback.
+                            // Clear the factory reference before construction so a failure
+                            // cannot close the same descriptor twice.
+                            descriptor = null
+                            FixedEngine.create(
+                                pfd = openedDescriptor,
+                                pageWidthPx = layoutConfig.pageWidthPx,
+                                theme = theme,
+                                initialPageIndex = initialLocator.chapter,
+                                ioDispatcher = dispatchers.io,
+                                onPageRendered = onPageRendered,
+                            )
+                        },
+                        transfer = { created ->
+                            // Record ownership before starting asynchronous page work. If the
+                            // caller was cancelled during construction, catch below can now
+                            // close the engine instead of losing an unreferenced renderer.
+                            engine = created
+                            created.start()
+                        },
+                    )
                     require(fixed.pageCount.value.exact?.let { it > 0 } == true) {
                         "PDF 文档没有可读取的页面"
                     }
@@ -134,4 +147,17 @@ class ReaderSessionFactory @Inject constructor(
             throw failure
         }
     }
+}
+
+
+/**
+ * Completes synchronous resource construction and records ownership before cancellation
+ * can be observed by the caller on return from the selected dispatcher.
+ */
+internal suspend fun <T> createAndTransferOwnership(
+    dispatcher: CoroutineDispatcher,
+    create: () -> T,
+    transfer: (T) -> Unit,
+): T = withContext(NonCancellable + dispatcher) {
+    create().also(transfer)
 }

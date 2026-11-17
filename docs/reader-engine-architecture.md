@@ -386,6 +386,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 - Session 持有当前 Engine、可选 BookSource、TOC 快照和专属 SupervisorJob；ReflowEngine 使用 Session 专属任务作用域，不再使用 ViewModel 的全局作用域。
 - 全文搜索也作为 Session 子任务运行；Session 关闭会先取消并等待全部子任务结束，再释放底层 Source / PDF Descriptor。
 - 资源所有权明确：ReflowEngine 接管并关闭 BookSource；FixedEngine 接管并关闭 ParcelFileDescriptor；Session 不重复释放底层资源。
+- PDF 构造遵守 Android PdfRenderer 的所有权契约：成功创建 Renderer 后由 Renderer 负责关闭 PFD；Renderer 构造失败由 Factory 关闭 PFD；Engine 初始化失败由 Factory 关闭 Renderer。初始页任务只在 Factory 记录 Engine 所有权后启动，避免构造期间取消导致后台任务失去所有者。
 - 新增 `ReaderEngine.awaitPage` 和 `closeAndJoin` 统一能力；ReaderViewModel 不再判断 FixedEngine 类型。
 - Reflow / Fixed 引擎均支持等待关闭完成；Reflow 关闭时串行化任务注册与关闭快照，避免新布局任务漏出清理集合；Fixed 关闭时等待 PdfRenderer 使用互斥锁退出后再释放 Descriptor。
 - ReaderViewModel 只保存 Session；Engine 是从 Session 派生的只读访问属性，不再单独持有 Engine 或 Source。

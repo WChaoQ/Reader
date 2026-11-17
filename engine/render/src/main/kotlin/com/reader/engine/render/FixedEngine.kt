@@ -37,8 +37,8 @@ import kotlin.math.sqrt
  * PdfRenderer access is serialized on [ioDispatcher]. Drawing only paints cached bitmaps;
  * cache misses schedule a background render and notify the UI on the main thread.
  */
-class FixedEngine(
-    private val pfd: ParcelFileDescriptor,
+class FixedEngine private constructor(
+    private val renderer: PdfRenderer,
     private val pageWidthPx: Int,
     private val theme: String = "day",
     private val initialPageIndex: Int = 0,
@@ -46,12 +46,6 @@ class FixedEngine(
     private val onPageRendered: () -> Unit = {},
 ) : ReaderEngine {
 
-    private val renderer = try {
-        PdfRenderer(pfd)
-    } catch (failure: Throwable) {
-        runCatching { pfd.close() }
-        throw failure
-    }
     private val mutex = Mutex()
     private val renderScope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val cleanupScope = CoroutineScope(SupervisorJob() + ioDispatcher)
@@ -61,6 +55,7 @@ class FixedEngine(
     @Volatile private var closed = false
     private val closeStarted = AtomicBoolean(false)
     private val closeCompleted = CompletableDeferred<Unit>()
+    private val started = AtomicBoolean(false)
 
     private val bitmapCache = object : LruCache<Int, Bitmap>(MAX_CACHE_KB) {
         override fun sizeOf(key: Int, value: Bitmap): Int =
@@ -113,7 +108,12 @@ class FixedEngine(
     override val failure: StateFlow<ReaderEngineFailure?> = _failure
     override val capabilities: Set<ReaderCapability> = emptySet()
 
-    init {
+    /**
+     * Starts page work only after the SessionFactory has recorded ownership of this engine.
+     * This prevents cancellation during construction from orphaning already-started jobs.
+     */
+    fun start() {
+        if (closed || !started.compareAndSet(false, true)) return
         if (pageTotal > 0) {
             val openingPage = initialPageIndex.coerceIn(0, pageTotal - 1)
             requestPage(openingPage)
@@ -334,8 +334,9 @@ class FixedEngine(
         cleanupScope.launch {
             try {
                 mutex.withLock {
+                    // PdfRenderer takes ownership of the ParcelFileDescriptor and closes
+                    // it as part of renderer shutdown.
                     runCatching { renderer.close() }
-                    runCatching { pfd.close() }
                 }
                 closeCompleted.complete(Unit)
             } catch (failure: Throwable) {
@@ -351,8 +352,34 @@ class FixedEngine(
         closeCompleted.await()
     }
 
-    private companion object {
-        const val MAX_CACHE_KB = 32 * 1024
-        const val MAX_BITMAP_BYTES = 16 * 1024 * 1024
+    companion object {
+        /**
+         * Transfers [pfd] to PdfRenderer. On successful renderer construction, PdfRenderer
+         * owns the descriptor; if engine initialization then fails, the renderer is closed.
+         */
+        fun create(
+            pfd: ParcelFileDescriptor,
+            pageWidthPx: Int,
+            theme: String = "day",
+            initialPageIndex: Int = 0,
+            ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+            onPageRendered: () -> Unit = {},
+        ): FixedEngine = createEngineWithOwnedDescriptor(
+            descriptor = pfd,
+            createRenderer = { descriptor -> PdfRenderer(descriptor) },
+            createEngine = { renderer ->
+                FixedEngine(
+                    renderer = renderer,
+                    pageWidthPx = pageWidthPx,
+                    theme = theme,
+                    initialPageIndex = initialPageIndex,
+                    ioDispatcher = ioDispatcher,
+                    onPageRendered = onPageRendered,
+                )
+            },
+        )
+
+        private const val MAX_CACHE_KB = 32 * 1024
+        private const val MAX_BITMAP_BYTES = 16 * 1024 * 1024
     }
 }
