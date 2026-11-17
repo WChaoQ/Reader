@@ -15,7 +15,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.File
-import java.util.Base64
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -123,13 +122,13 @@ class EpubFormatAdapterContractTest {
     }
 
     private fun fixtureFile(): File {
-        val encoded = requireNotNull(
-            javaClass.classLoader?.getResourceAsStream("epub/reader-contract.epub.b64"),
+        val fixture = requireNotNull(
+            javaClass.classLoader?.getResourceAsStream("epub/reader-contract.epub"),
         ) { "Missing real EPUB contract fixture" }
-            .bufferedReader(Charsets.US_ASCII)
-            .use { it.readText().trim() }
         return File.createTempFile("reader-contract-", ".epub").apply {
-            writeBytes(Base64.getDecoder().decode(encoded))
+            fixture.use { input ->
+                outputStream().use { output -> input.copyTo(output) }
+            }
         }
     }
 }
