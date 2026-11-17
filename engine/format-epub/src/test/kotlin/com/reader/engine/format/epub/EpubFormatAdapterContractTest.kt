@@ -15,6 +15,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.Base64
+import java.util.zip.CRC32
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -79,10 +83,7 @@ class EpubFormatAdapterContractTest {
                 imageBytes.copyOfRange(0, 8),
             )
 
-            val packageRoot = image.ref.href.substringBeforeLast("Images/pixel.png").trimEnd('/')
-            val fontHref = listOf(packageRoot, "Fonts/fixture.ttf")
-                .filter { it.isNotEmpty() }
-                .joinToString("/")
+            val fontHref = image.ref.href.substringBeforeLast('/') + "/fixture.ttf"
             val fontBytes = source.openResource(ResourceRef(fontHref)).use { it.readBytes() }
             assertTrue(fontBytes.size > 500)
             assertArrayEquals(byteArrayOf(0, 1, 0, 0), fontBytes.copyOfRange(0, 4))
@@ -122,13 +123,106 @@ class EpubFormatAdapterContractTest {
     }
 
     private fun fixtureFile(): File {
-        val fixture = requireNotNull(
-            javaClass.classLoader?.getResourceAsStream("epub/reader-contract.epub"),
-        ) { "Missing real EPUB contract fixture" }
-        return File.createTempFile("reader-contract-", ".epub").apply {
-            fixture.use { input ->
-                outputStream().use { output -> input.copyTo(output) }
+        val image = Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p2sAAAAASUVORK5CYII=",
+        )
+        val font = ByteArray(512).apply {
+            this[0] = 0
+            this[1] = 1
+            this[2] = 0
+            this[3] = 0
+        }
+        val entries = listOf(
+            "mimetype" to "application/epub+zip".toByteArray(Charsets.US_ASCII),
+            "META-INF/container.xml" to """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                  <rootfiles><rootfile full-path="EPUB/package.opf" media-type="application/oebps-package+xml"/></rootfiles>
+                </container>
+            """.trimIndent().toByteArray(),
+            "EPUB/package.opf" to """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="pub-id">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:identifier id="pub-id">urn:reader:fixture:epub-contract</dc:identifier>
+                    <dc:title>Reader EPUB Contract Fixture</dc:title>
+                    <dc:creator>Reader Test Suite</dc:creator>
+                    <dc:language>en</dc:language>
+                  </metadata>
+                  <manifest>
+                    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                    <item id="chapter-one" href="Text/chapter-1.xhtml" media-type="application/xhtml+xml"/>
+                    <item id="chapter-two" href="Text/chapter-2.xhtml" media-type="application/xhtml+xml"/>
+                    <item id="pixel" href="Resources/pixel.png" media-type="image/png"/>
+                    <item id="font" href="Resources/fixture.ttf" media-type="font/ttf"/>
+                    <item id="style" href="Styles/book.css" media-type="text/css"/>
+                  </manifest>
+                  <spine>
+                    <itemref idref="chapter-one"/>
+                    <itemref idref="chapter-two"/>
+                  </spine>
+                </package>
+            """.trimIndent().toByteArray(),
+            "EPUB/nav.xhtml" to """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+                  <head><title>Contents</title></head>
+                  <body>
+                    <nav epub:type="toc" id="toc">
+                      <h1>Contents</h1>
+                      <ol>
+                        <li><a href="Text/chapter-1.xhtml#part-one">Part One</a>
+                          <ol>
+                            <li><a href="Text/chapter-1.xhtml#chapter-one">Chapter One</a></li>
+                            <li><a href="Text/chapter-2.xhtml#chapter-two">Chapter Two</a></li>
+                          </ol>
+                        </li>
+                      </ol>
+                    </nav>
+                  </body>
+                </html>
+            """.trimIndent().toByteArray(),
+            "EPUB/Text/chapter-1.xhtml" to """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                  <head><title>Chapter One</title></head>
+                  <body>
+                    <h1 id="chapter-one">Chapter One</h1>
+                    <p>  Hello   <strong>bold <em>and italic</em></strong>   world 😀
+                      <a href="chapter-2.xhtml#chapter-two"> next   chapter </a>
+                    </p>
+                    <p>Unicode: 中文 Ελληνικά café 😀</p>
+                    <img src="../Resources/pixel.png" alt="One pixel"/>
+                  </body>
+                </html>
+            """.trimIndent().toByteArray(Charsets.UTF_8),
+            "EPUB/Text/chapter-2.xhtml" to """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml">
+                  <head><title>Chapter Two</title></head>
+                  <body><h2 id="chapter-two">Chapter Two</h2><p>Second chapter body.</p></body>
+                </html>
+            """.trimIndent().toByteArray(),
+            "EPUB/Resources/pixel.png" to image,
+            "EPUB/Resources/fixture.ttf" to font,
+            "EPUB/Styles/book.css" to "body { font-family: 'Reader Fixture'; }".toByteArray(),
+        )
+
+        val file = File.createTempFile("reader-contract-", ".epub")
+        ZipOutputStream(file.outputStream().buffered()).use { zip ->
+            entries.forEach { (name, bytes) ->
+                val entry = ZipEntry(name)
+                if (name == "mimetype") {
+                    entry.method = ZipEntry.STORED
+                    entry.size = bytes.size.toLong()
+                    entry.compressedSize = bytes.size.toLong()
+                    entry.crc = CRC32().apply { update(bytes) }.value
+                }
+                zip.putNextEntry(entry)
+                zip.write(bytes)
+                zip.closeEntry()
             }
         }
+        return file
     }
 }
