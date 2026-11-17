@@ -5,6 +5,10 @@ plugins {
 
 android {
     namespace = "com.reader.engine.format.epub"
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -12,6 +16,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
     // Android provides XmlPullParser at runtime, but local JVM unit tests need
     // a concrete implementation for XmlPullParserFactory.newInstance().
     testImplementation("net.sf.kxml:kxml2:2.3.0")
