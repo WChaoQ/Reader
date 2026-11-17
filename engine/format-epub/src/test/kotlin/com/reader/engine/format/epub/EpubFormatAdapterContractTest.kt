@@ -34,11 +34,13 @@ class EpubFormatAdapterContractTest {
             assertEquals(2, source.chapterCount)
 
             val metadata = source.metadata()
+            println("EPUB_FIXTURE_METADATA=$metadata")
             assertEquals("Reader EPUB Contract Fixture", metadata.title)
             assertEquals("Reader Test Suite", metadata.author)
             assertEquals("en", metadata.language)
 
             val toc = source.toc()
+            println("EPUB_FIXTURE_TOC=$toc")
             assertEquals(1, toc.size)
             assertEquals("Part One", toc.single().title)
             assertEquals(0, toc.single().locator.chapter)
@@ -52,6 +54,7 @@ class EpubFormatAdapterContractTest {
             )
 
             val firstChapter = source.loadChapter(0)
+            println("EPUB_FIXTURE_CHAPTER_1=$firstChapter")
             assertEquals(0, firstChapter.index)
             assertEquals("Chapter One", firstChapter.title)
 
