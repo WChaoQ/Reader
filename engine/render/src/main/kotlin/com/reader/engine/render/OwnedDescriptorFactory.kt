@@ -1,6 +1,6 @@
 package com.reader.engine.render
 
-import java.io.Closeable
+import java.lang.AutoCloseable
 
 /**
  * Builds an engine around a renderer that takes ownership of a descriptor.
@@ -9,7 +9,7 @@ import java.io.Closeable
  * returned renderer then owns the descriptor. Once [createEngine] succeeds, the
  * engine owns the renderer; if engine construction fails, this function closes it.
  */
-internal fun <D : Closeable, R : Closeable, E> createEngineWithOwnedDescriptor(
+internal fun <D : AutoCloseable, R : AutoCloseable, E> createEngineWithOwnedDescriptor(
     descriptor: D,
     createRenderer: (D) -> R,
     createEngine: (R) -> E,

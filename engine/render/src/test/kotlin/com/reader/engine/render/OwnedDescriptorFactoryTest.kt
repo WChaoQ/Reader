@@ -80,7 +80,7 @@ class OwnedDescriptorFactoryTest {
 
     private class FakeRenderer(
         private val descriptor: FakeDescriptor,
-    ) : Closeable {
+    ) : AutoCloseable {
         val closeCalls = AtomicInteger()
         override fun close() {
             closeCalls.incrementAndGet()
