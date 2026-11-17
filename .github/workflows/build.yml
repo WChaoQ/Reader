@@ -58,6 +58,10 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :core:model:test --stacktrace --no-daemon
 
+      - name: Run Core Database migration tests
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
+        run: ./gradlew :core:database:testDebugUnitTest --stacktrace --no-daemon
+
       - name: Run Core Data contract tests
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :core:data:testDebugUnitTest --stacktrace --no-daemon
@@ -73,7 +77,7 @@ jobs:
       - name: Run Render Engine unit tests
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :engine:render:testDebugUnitTest --stacktrace --no-daemon
- 
+
       - name: Run Reader Feature unit tests
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :feature:reader:testDebugUnitTest --stacktrace --no-daemon

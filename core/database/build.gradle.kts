@@ -7,6 +7,10 @@ plugins {
 
 android {
     namespace = "com.reader.core.database"
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 room {
@@ -18,4 +22,7 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
 }
