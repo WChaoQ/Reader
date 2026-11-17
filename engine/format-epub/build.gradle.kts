@@ -8,9 +8,6 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
-        unitTests.all { test ->
-            test.testLogging.showStandardStreams = true
-        }
     }
 }
 

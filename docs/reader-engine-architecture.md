@@ -366,13 +366,13 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 - 新增 Core Model 契约测试、Markdown / XHTML Span 偏移回归测试、PageCountInfo 测试和历史 Progress / Bookmark Locator 有界修复测试；GitHub Actions 加入 Core Model、Core Data、Format API、Render、Markdown、EPUB 等契约测试。
 
 阶段 A 尚需验收：
-- 该记录写入时工作流仍为手动触发，尚未取得构建结果；自 2026-11-14 起，目标分支的 push / Pull Request 会自动触发 Debug 测试与构建。
-- 真实 EPUB fixture 仍需覆盖嵌套标签、混合空白、非 ASCII / emoji、链接和粗斜体重叠范围。
+- 自 2026-11-14 起，目标分支的 push / Pull Request 自动触发 Debug 测试与构建；2026-11-17 的完整契约测试与 Debug 构建通过 GitHub Actions run `44021231361`。
+- 新增 `EpubFormatAdapterContractTest`：使用 Robolectric 调用 `EpubFormatHandler` / Readium 打开由 `ZipOutputStream` 生成的真实 EPUB 3 ZIP 容器，覆盖 metadata、嵌套 TOC、双章节 reading order、图片与字体资源读取、混合空白、中文/希腊文/emoji、嵌套 strong/em 与链接 Span、越界章节、重复 close 和损坏容器拒绝。资源读取已验证；字体解码和真实设备/SAF Provider 行为仍未验证。
 - 已在 Progress / Bookmark 读取映射处对历史负索引、负 offset、非有限或越界 progression 做有界修复；仍需在实际设备验证真实数据库数据和恢复行为。
 
 阶段边界：
 - 阶段 A 是协议冻结与契约验证，不包含分页算法、缓存策略或阅读界面优化。
-- 阶段 A 未通过构建和 fixture 验收前，不进入阶段 C 及后续格式 / 布局优化。
+- 阶段 A 的 JVM 契约测试、真实 EPUB fixture 和 Debug 构建已有 CI 通过证据；历史 Progress / Bookmark 数据兼容仍需真实设备验证。该项完成前不进入阶段 C 及后续格式 / 布局优化。
 
 ### 13.1 架构落地记录
 
