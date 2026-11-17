@@ -192,7 +192,7 @@ class EpubFormatAdapterContractTest {
                   <body>
                     <h1 id="chapter-one">Chapter One</h1>
                     <p>  Hello   <strong>bold <em>and italic</em></strong>   world 😀
-                      <a href="chapter-2.xhtml#chapter-two"> next   chapter </a>
+                      <a href="chapter-2.xhtml#chapter-two">next   chapter</a>
                     </p>
                     <p>Unicode: 中文 Ελληνικά café 😀</p>
                     <img src="../Resources/pixel.png" alt="One pixel"/>
