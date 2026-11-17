@@ -8,12 +8,8 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
-        unitTests.all {
-            testLogging {
-                events("failed")
-                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-                showStandardStreams = true
-            }
+        unitTests.all { test ->
+            test.testLogging.showStandardStreams = true
         }
     }
 }
