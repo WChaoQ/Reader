@@ -114,7 +114,7 @@ class LegacyBookSourceRepositoryTest {
         withRepositories { _, _, bookRepository, database ->
             val uri = Uri.parse("content://reader.revoked/document/1")
             ShadowContentResolver.registerProviderInternal(
-                uri.authority,
+                "reader.revoked",
                 RevokedContentProvider(),
             )
             val book = legacyBook(BookFormat.EPUB).copy(sourceUri = uri.toString())
