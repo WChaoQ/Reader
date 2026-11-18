@@ -369,6 +369,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 - 自 2026-11-14 起，目标分支的 push / Pull Request 自动触发 Debug 测试与构建；2026-11-17 的完整契约测试与 Debug 构建通过 GitHub Actions run `44021231361`。
 - 新增 `EpubFormatAdapterContractTest`：使用 Robolectric 调用 `EpubFormatHandler` / Readium 打开由 `ZipOutputStream` 生成的真实 EPUB 3 ZIP 容器，覆盖 metadata、嵌套 TOC、双章节 reading order、图片与字体资源读取、混合空白、中文/希腊文/emoji、嵌套 strong/em 与链接 Span、越界章节、重复 close 和损坏容器拒绝。资源读取已验证；字体解码和真实设备/SAF Provider 行为仍未验证。
 - 已在 Progress / Bookmark 读取映射处对历史负索引、负 offset、非有限或越界 progression 做有界修复；仍需在实际设备验证真实数据库数据和恢复行为。
+- 2026-11-18：新增 `LegacyReaderDataMigrationIntegrationTest`，从 v1 SQLite fixture 触发生产 `DatabaseModule` 的 Room 迁移，再通过 `BookDao`、`ProgressRepository` 和 `BookmarkRepository` 验证旧书籍、阅读 Locator 与书签可读取；GitHub Actions run `44214482473` 的 Core Data 测试及完整 Debug 构建通过。该 Robolectric 验证不替代真实设备、进程重建和 SAF DocumentProvider 验收。
 
 阶段边界：
 - 阶段 A 是协议冻结与契约验证，不包含分页算法、缓存策略或阅读界面优化。
