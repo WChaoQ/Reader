@@ -1,6 +1,9 @@
 package com.reader.core.data
 
+import android.content.ContentProvider
+import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import com.reader.core.common.ReaderDispatchers
 import com.reader.core.database.di.DatabaseModule
@@ -32,6 +35,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowContentResolver
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -101,6 +105,41 @@ class LegacyBookSourceRepositoryTest {
             val persistedBook = bookRepository.getBook(book.id)
             assertNotNull(persistedBook)
             assertNull(persistedBook?.sourceUri)
+            assertEquals(locator, progressRepository.get(book.id))
+        }
+    }
+
+    @Test
+    fun revokedSafPermissionPreservesBookAndProgress() = runBlocking {
+        withRepositories { _, _, bookRepository, database ->
+            val uri = Uri.parse("content://reader.revoked/document/1")
+            ShadowContentResolver.registerProviderInternal(
+                uri.authority,
+                RevokedContentProvider(),
+            )
+            val book = legacyBook(BookFormat.EPUB).copy(sourceUri = uri.toString())
+            val locator = Locator(chapter = 3, offset = 456, progression = 0.3f)
+            bookRepository.upsert(book)
+            val progressRepository = ProgressRepository(
+                progressDao = database.progressDao(),
+                dispatchers = TestReaderDispatchers,
+            )
+            progressRepository.save(book.id, locator)
+
+            val repository = BookSourceRepository(
+                context = RuntimeEnvironment.getApplication(),
+                bookRepository = bookRepository,
+                formatRegistry = FormatRegistry(setOf(RecordingFormatHandler(BookFormat.EPUB))),
+                dispatchers = TestReaderDispatchers,
+            )
+
+            val failure = runCatching { repository.open(book) }.exceptionOrNull()
+            assertTrue(failure is SecurityException)
+            assertEquals("persisted permission revoked", failure?.message)
+
+            val persistedBook = bookRepository.getBook(book.id)
+            assertNotNull(persistedBook)
+            assertEquals(uri.toString(), persistedBook?.sourceUri)
             assertEquals(locator, progressRepository.get(book.id))
         }
     }
@@ -205,6 +244,33 @@ class LegacyBookSourceRepositoryTest {
             )
             zip.closeEntry()
         }
+    }
+
+    private class RevokedContentProvider : ContentProvider() {
+        override fun onCreate(): Boolean = true
+
+        override fun query(
+            uri: Uri,
+            projection: Array<out String>?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+            sortOrder: String?,
+        ): Cursor? = throw SecurityException("persisted permission revoked")
+
+        override fun getType(uri: Uri): String? = null
+
+        override fun insert(uri: Uri, values: ContentValues?): Uri? =
+            throw UnsupportedOperationException()
+
+        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int =
+            throw UnsupportedOperationException()
+
+        override fun update(
+            uri: Uri,
+            values: ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ): Int = throw UnsupportedOperationException()
     }
 
     private class RecordingFormatHandler(
