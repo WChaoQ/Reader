@@ -18,7 +18,6 @@ import com.reader.engine.format.FormatHandler
 import com.reader.engine.format.FormatRegistry
 import java.io.ByteArrayInputStream
 import java.io.File
-import java.util.UUID
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -161,7 +160,7 @@ class LegacyBookSourceRepositoryTest {
     }
 
     private fun legacyBook(format: BookFormat): Book = Book(
-        id = "$TEST_BOOK_ID_PREFIX-${UUID.randomUUID()}",
+        id = TEST_BOOK_ID_PREFIX,
         title = "Legacy ${format.name}",
         author = "Reader Test",
         format = format,
