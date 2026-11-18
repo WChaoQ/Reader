@@ -370,6 +370,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 - 新增 `EpubFormatAdapterContractTest`：使用 Robolectric 调用 `EpubFormatHandler` / Readium 打开由 `ZipOutputStream` 生成的真实 EPUB 3 ZIP 容器，覆盖 metadata、嵌套 TOC、双章节 reading order、图片与字体资源读取、混合空白、中文/希腊文/emoji、嵌套 strong/em 与链接 Span、越界章节、重复 close 和损坏容器拒绝。资源读取已验证；字体解码和真实设备/SAF Provider 行为仍未验证。
 - 已在 Progress / Bookmark 读取映射处对历史负索引、负 offset、非有限或越界 progression 做有界修复；仍需在实际设备验证真实数据库数据和恢复行为。
 - 2026-11-18：新增 `LegacyReaderDataMigrationIntegrationTest`，从 v1 SQLite fixture 触发生产 `DatabaseModule` 的 Room 迁移，再通过 `BookDao`、`ProgressRepository` 和 `BookmarkRepository` 验证旧书籍、阅读 Locator 与书签可读取；GitHub Actions run `44214482473` 的 Core Data 测试及完整 Debug 构建通过。该 Robolectric 验证不替代真实设备、进程重建和 SAF DocumentProvider 验收。
+- 2026-11-18：新增 `LegacyBookSourceRepositoryTest`，使用最小 EPUB ZIP fixture 验证 `sourceUri == null` 时从 `BookFileStore.originalFile()` 创建 file-backed `DocumentHandle`，原始文件字节保持不变且不生成第二份副本；缺失旧文件时返回重新选择提示并保留书籍/进度；模拟 SAF Provider 抛出 `SecurityException` 时同样保留书籍/进度；PDF 旧文件可返回 seekable PFD 并由调用方关闭。GitHub Actions run `44239318620` 的 Core Data 测试、其余契约测试及 Debug 构建通过。该测试验证来源选择与资源边界，不替代真实 EPUB Adapter 解析、真实 Android 持久 URI 授权撤销和设备级 Provider 行为验收。
 
 阶段边界：
 - 阶段 A 是协议冻结与契约验证，不包含分页算法、缓存策略或阅读界面优化。
