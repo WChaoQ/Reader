@@ -16,7 +16,13 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                 defaultConfig {
                     minSdk = 26
                     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-                    consumerProguardFiles("consumer-rules.pro")
+                    // Consumer rules are optional per library module. Only register the
+                    // conventional file when it exists; otherwise lint and packaging
+                    // fail before the module's own checks can run.
+                    val consumerRules = target.file("consumer-rules.pro")
+                    if (consumerRules.isFile) {
+                        consumerProguardFiles(consumerRules)
+                    }
                 }
 
                 compileOptions {
