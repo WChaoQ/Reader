@@ -82,6 +82,10 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :feature:reader:testDebugUnitTest --stacktrace --no-daemon
 
+      - name: Run Reader Feature Android Lint
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
+        run: ./gradlew :feature:reader:lintDebug --stacktrace --no-daemon
+
       - name: Run Markdown Engine unit tests
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :engine:format-markdown:testDebugUnitTest --stacktrace --no-daemon
