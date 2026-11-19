@@ -14,6 +14,7 @@ import com.reader.core.model.Block
 import com.reader.core.model.BookFormat
 import com.reader.core.model.Locator
 import com.reader.core.model.TocEntry
+import com.reader.engine.format.BookSource
 import com.reader.engine.layout.LayoutConfig
 import com.reader.engine.render.PageCountInfo
 import com.reader.engine.render.ReaderCapability
@@ -32,6 +33,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -46,6 +49,50 @@ data class SearchHit(
     val snippet: String,
     val chapterTitle: String,
 )
+
+/**
+ * Searches every chapter as one operation. Source access failures must reach the caller;
+ * returning partial hits would incorrectly present an incomplete search as successful.
+ */
+internal suspend fun searchBookSource(source: BookSource, query: String): List<SearchHit> {
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isEmpty()) return emptyList()
+
+    val context = currentCoroutineContext()
+    val hits = mutableListOf<SearchHit>()
+    for (chapterIndex in 0 until source.chapterCount) {
+        context.ensureActive()
+        val chapter = source.loadChapter(chapterIndex)
+        context.ensureActive()
+        val plainText = chapter.blocks.joinToString("\n") {
+            when (it) {
+                is Block.Paragraph -> it.text
+                is Block.Heading -> it.text
+                is Block.CodeBlock -> it.text
+                else -> ""
+            }
+        }
+        var from = 0
+        while (true) {
+            val index = plainText.indexOf(
+                normalizedQuery,
+                startIndex = from,
+                ignoreCase = true,
+            )
+            if (index < 0) break
+            val start = (index - 20).coerceAtLeast(0)
+            val end = (index + normalizedQuery.length + 40).coerceAtMost(plainText.length)
+            hits += SearchHit(
+                locator = Locator(chapter = chapterIndex, offset = index),
+                snippet = plainText.substring(start, end).replace('\n', ' '),
+                chapterTitle = chapter.title ?: "第${chapterIndex + 1}章",
+            )
+            if (hits.size >= 50) return hits
+            from = index + normalizedQuery.length
+        }
+    }
+    return hits
+}
 
 data class ReaderUiState(
     val title: String = "",
@@ -236,43 +283,35 @@ class ReaderViewModel @Inject constructor(
             _state.update { it.copy(searching = false, snackbar = "当前格式暂不支持全文搜索") }
             return
         }
+        val searchGeneration = openGeneration.get()
         searchJob = activeSession.launchTask(dispatchers.io) {
-            val hits = mutableListOf<SearchHit>()
-            val q = query.trim()
-            for (ch in 0 until source.chapterCount) {
-                val chapter = try {
-                    source.loadChapter(ch)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    continue
-                }
-                val plain = chapter.blocks.joinToString("\n") {
-                    when (it) {
-                        is Block.Paragraph -> it.text
-                        is Block.Heading -> it.text
-                        is Block.CodeBlock -> it.text
-                        else -> ""
+            try {
+                val hits = searchBookSource(source, query)
+                currentCoroutineContext().ensureActive()
+                if (session === activeSession && openGeneration.get() == searchGeneration) {
+                    _state.update { current ->
+                        if (current.searchQuery != query) current
+                        else current.copy(searching = false, searchHits = hits)
                     }
                 }
-                var from = 0
-                while (true) {
-                    val idx = plain.indexOf(q, startIndex = from, ignoreCase = true)
-                    if (idx < 0) break
-                    val start = (idx - 20).coerceAtLeast(0)
-                    val end = (idx + q.length + 40).coerceAtMost(plain.length)
-                    val snippet = plain.substring(start, end).replace('\n', ' ')
-                    hits += SearchHit(
-                        locator = Locator(chapter = ch, offset = idx),
-                        snippet = snippet,
-                        chapterTitle = chapter.title ?: "第${ch + 1}章",
-                    )
-                    from = idx + q.length
-                    if (hits.size >= 50) break
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                val message = ReaderEngineFailure.fromException(
+                    failure,
+                    "全文搜索失败，请重试",
+                ).message
+                if (session === activeSession && openGeneration.get() == searchGeneration) {
+                    _state.update { current ->
+                        if (current.searchQuery != query) current
+                        else current.copy(
+                            searching = false,
+                            searchHits = emptyList(),
+                            snackbar = message,
+                        )
+                    }
                 }
-                if (hits.size >= 50) break
             }
-            _state.update { it.copy(searching = false, searchHits = hits) }
         }
     }
 
