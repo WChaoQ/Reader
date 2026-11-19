@@ -402,7 +402,7 @@ DocumentHandle → PDF Format Adapter → PDF Document Session（page count / pa
 
 阶段 B 尚需验收：
 - 补充 ReaderSessionFactory 的资源回滚测试，以及快速连续切换、取消打开、PDF 渲染中关闭等集成/设备测试。
-- 该记录写入时尚未取得构建结果；自 2026-11-14 起，目标分支的 push / Pull Request 会自动触发 Debug 测试与构建。
+- 2026-11-19：`ReaderSessionFactoryIntegrationTest` 已由目标分支 GitHub Actions run `44440719982` 执行通过；后续 HEAD `43bd8fea2e1c2d352acbdc807e4af82b3d753603` 的 run `44441952544` 再次通过全部契约测试、Reader Feature Android Lint、Debug assemble 与 APK Artifact 上传。push 工作流的 Release 步骤按条件跳过。该 CI 结果证明 Robolectric/JVM 测试、Reader Feature lint 和 Debug 构建通过，不替代真实 Android 设备及 SAF DocumentProvider 验收。
 - 确认不同 DocumentProvider 下 PDF / EPUB 随机访问和权限撤销的异常路径。
 
 阶段边界：
