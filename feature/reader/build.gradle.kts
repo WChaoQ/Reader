@@ -6,6 +6,10 @@ plugins {
 
 android {
     namespace = "com.reader.feature.reader"
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -23,5 +27,10 @@ dependencies {
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.navigation.compose)
     implementation("androidx.compose.material:material-icons-extended")
+
+    testImplementation(project(":core:database"))
+    testImplementation(project(":core:storage"))
+    testImplementation(libs.androidx.room.runtime)
+    testImplementation(libs.robolectric)
     testImplementation(libs.junit)
 }
