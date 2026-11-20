@@ -7,6 +7,7 @@ import com.reader.core.model.Chapter
 import com.reader.core.model.ResourceRef
 import com.reader.core.model.TocEntry
 import com.reader.engine.format.BookSource
+import com.reader.engine.layout.DocumentTextBuilder
 import java.io.ByteArrayInputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -14,7 +15,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class ReaderSearchTest {
 
     @Test
@@ -67,6 +71,32 @@ class ReaderSearchTest {
         assertEquals("before needle after".indexOf("needle"), hits.single().locator.offset)
         assertTrue(hits.single().snippet.contains("needle"))
         assertEquals("Chapter 2", hits.single().chapterTitle)
+    }
+
+    @Test
+    fun nestedAndResourceTextUseOffsetsFromTheActualLayoutText() = runBlocking {
+        val blocks = listOf(
+            Block.Paragraph("intro"),
+            Block.Quote(listOf(Block.Paragraph("quoted needle"))),
+            Block.ListItem(
+                ordered = true,
+                index = 1,
+                children = listOf(Block.Paragraph("listed needle")),
+            ),
+            Block.Image(ResourceRef("image.png"), alt = "image needle"),
+        )
+        val renderedText = DocumentTextBuilder.build(blocks).toString()
+        val source = TestBookSource(chapterCount = 1) {
+            Chapter(index = 0, title = "Nested content", blocks = blocks)
+        }
+
+        val hits = searchBookSource(source, "needle")
+
+        assertEquals(3, hits.size)
+        assertEquals(
+            listOf("quoted needle", "listed needle", "image needle").map { renderedText.indexOf(it) },
+            hits.map { it.locator.offset },
+        )
     }
 
     private class TestBookSource(

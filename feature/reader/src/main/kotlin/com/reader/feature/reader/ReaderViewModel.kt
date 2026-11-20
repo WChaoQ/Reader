@@ -10,7 +10,7 @@ import com.reader.core.data.BookRepository
 import com.reader.core.data.ProgressRepository
 import com.reader.core.model.Bookmark
 import com.reader.core.data.ReaderPreferencesRepository
-import com.reader.core.model.Block
+import com.reader.engine.layout.DocumentTextBuilder
 import com.reader.core.model.BookFormat
 import com.reader.core.model.Locator
 import com.reader.core.model.TocEntry
@@ -44,6 +44,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
+private const val SEARCH_DEBOUNCE_MILLIS = 250L
+
 data class SearchHit(
     val locator: Locator,
     val snippet: String,
@@ -64,14 +66,8 @@ internal suspend fun searchBookSource(source: BookSource, query: String): List<S
         context.ensureActive()
         val chapter = source.loadChapter(chapterIndex)
         context.ensureActive()
-        val plainText = chapter.blocks.joinToString("\n") {
-            when (it) {
-                is Block.Paragraph -> it.text
-                is Block.Heading -> it.text
-                is Block.CodeBlock -> it.text
-                else -> ""
-            }
-        }
+        // Use the exact text built for pagination so search offsets map to rendered content.
+        val plainText = DocumentTextBuilder.build(chapter.blocks).toString()
         var from = 0
         while (true) {
             val index = plainText.indexOf(
@@ -111,6 +107,7 @@ data class ReaderUiState(
     val searchVisible: Boolean = false,
     val searchQuery: String = "",
     val searchHits: List<SearchHit> = emptyList(),
+    val searchError: String? = null,
     val searching: Boolean = false,
     val snackbar: String? = null,
 )
@@ -267,31 +264,41 @@ class ReaderViewModel @Inject constructor(
 
     private fun runSearch(query: String) {
         searchJob?.cancel()
-        _state.update { it.copy(searchQuery = query, searching = true, searchHits = emptyList()) }
-        if (query.isBlank()) {
-            _state.update { it.copy(searching = false) }
-            return
+        searchJob = null
+        _state.update {
+            it.copy(
+                searchQuery = query,
+                searching = query.isNotBlank(),
+                searchHits = emptyList(),
+                searchError = null,
+            )
         }
+        if (query.isBlank()) return
+
         val activeSession = session
         if (activeSession == null ||
             ReaderCapability.FULL_TEXT_SEARCH !in activeSession.engine.capabilities
         ) {
-            _state.update { it.copy(searching = false, snackbar = "当前格式暂不支持全文搜索") }
+            val message = "当前格式暂不支持全文搜索"
+            _state.update { it.copy(searching = false, searchError = message, snackbar = message) }
             return
         }
         val source = activeSession.source ?: run {
-            _state.update { it.copy(searching = false, snackbar = "当前格式暂不支持全文搜索") }
+            val message = "当前格式暂不支持全文搜索"
+            _state.update { it.copy(searching = false, searchError = message, snackbar = message) }
             return
         }
         val searchGeneration = openGeneration.get()
         searchJob = activeSession.launchTask(dispatchers.io) {
             try {
+                delay(SEARCH_DEBOUNCE_MILLIS)
+                currentCoroutineContext().ensureActive()
                 val hits = searchBookSource(source, query)
                 currentCoroutineContext().ensureActive()
                 if (session === activeSession && openGeneration.get() == searchGeneration) {
                     _state.update { current ->
                         if (current.searchQuery != query) current
-                        else current.copy(searching = false, searchHits = hits)
+                        else current.copy(searching = false, searchHits = hits, searchError = null)
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -307,6 +314,7 @@ class ReaderViewModel @Inject constructor(
                         else current.copy(
                             searching = false,
                             searchHits = emptyList(),
+                            searchError = message,
                             snackbar = message,
                         )
                     }
@@ -393,9 +401,19 @@ class ReaderViewModel @Inject constructor(
         pageJumpJob = null
         engineObserveJob?.cancel()
         engineObserveJob = null
-        _state.update { it.copy(isLoading = true, error = null, pageReady = false) }
-        searchJob?.cancel()
-        searchJob?.join()
+        searchJob?.cancelAndJoin()
+        searchJob = null
+        _state.update {
+            it.copy(
+                isLoading = true,
+                error = null,
+                pageReady = false,
+                searchVisible = false,
+                searching = false,
+                searchHits = emptyList(),
+                searchError = null,
+            )
+        }
         val previousSession = session
         session = null
         try {

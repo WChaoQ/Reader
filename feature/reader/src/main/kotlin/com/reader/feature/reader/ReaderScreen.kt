@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
@@ -63,6 +64,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -644,12 +648,37 @@ fun ReaderRoute(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     placeholder = { Text("输入关键词") },
+                    trailingIcon = {
+                        if (state.searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.onEvent(ReaderEvent.Search("")) }) {
+                                Icon(Icons.Default.Close, contentDescription = "清除搜索")
+                            }
+                        }
+                    },
                 )
-                if (state.searching) {
-                    CircularProgressIndicator(
+                when {
+                    state.searching -> CircularProgressIndicator(
                         modifier = Modifier
                             .padding(16.dp)
                             .align(Alignment.CenterHorizontally),
+                    )
+                    state.searchError != null -> Text(
+                        text = state.searchError.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    )
+                    state.searchQuery.isBlank() -> Text(
+                        "输入关键词搜索本书内容",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    )
+                    state.searchHits.isEmpty() -> Text(
+                        "未找到相关内容",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
                     )
                 }
             }
@@ -669,12 +698,44 @@ fun ReaderRoute(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        Text(hit.snippet, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
+                        SearchHitSnippet(hit, state.searchQuery)
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SearchHitSnippet(hit: SearchHit, query: String) {
+    val normalizedQuery = query.trim()
+    val matchStart = if (normalizedQuery.isEmpty()) {
+        -1
+    } else {
+        hit.snippet.indexOf(normalizedQuery, ignoreCase = true)
+    }
+    val annotated = buildAnnotatedString {
+        if (matchStart < 0) {
+            append(hit.snippet)
+        } else {
+            val matchEnd = matchStart + normalizedQuery.length
+            append(hit.snippet.substring(0, matchStart))
+            withStyle(
+                SpanStyle(
+                    background = MaterialTheme.colorScheme.secondaryContainer,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                ),
+            ) {
+                append(hit.snippet.substring(matchStart, matchEnd))
+            }
+            append(hit.snippet.substring(matchEnd))
+        }
+    }
+    Text(
+        text = annotated,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 3,
+    )
 }
 
 @Composable
