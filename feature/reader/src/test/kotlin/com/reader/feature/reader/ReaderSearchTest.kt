@@ -17,8 +17,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class ReaderSearchTest {
 
     @Test
@@ -97,6 +99,19 @@ class ReaderSearchTest {
             listOf("quoted needle", "listed needle", "image needle").map { renderedText.indexOf(it) },
             hits.map { it.locator.offset },
         )
+    }
+
+    @Test
+    fun repeatedMatchesKeepTheirOwnHighlightOffset() = runBlocking {
+        val source = TestBookSource(chapterCount = 1) {
+            chapter(0, "needle before needle")
+        }
+
+        val hits = searchBookSource(source, "needle")
+
+        assertEquals(2, hits.size)
+        assertEquals(0, hits[0].matchStartInSnippet)
+        assertEquals(14, hits[1].matchStartInSnippet)
     }
 
     private class TestBookSource(

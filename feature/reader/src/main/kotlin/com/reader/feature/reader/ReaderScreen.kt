@@ -709,21 +709,24 @@ fun ReaderRoute(
 @Composable
 private fun SearchHitSnippet(hit: SearchHit, query: String) {
     val normalizedQuery = query.trim()
-    val matchStart = if (normalizedQuery.isEmpty()) {
-        -1
-    } else {
-        hit.snippet.indexOf(normalizedQuery, ignoreCase = true)
-    }
+    val matchStart = hit.matchStartInSnippet
+    val matchEnd = matchStart + normalizedQuery.length
+    val highlightBackground = MaterialTheme.colorScheme.secondaryContainer
+    val highlightForeground = MaterialTheme.colorScheme.onSecondaryContainer
     val annotated = buildAnnotatedString {
-        if (matchStart < 0) {
+        if (
+            normalizedQuery.isEmpty() ||
+            matchStart < 0 ||
+            matchEnd > hit.snippet.length ||
+            !hit.snippet.regionMatches(matchStart, normalizedQuery, 0, normalizedQuery.length, ignoreCase = true)
+        ) {
             append(hit.snippet)
         } else {
-            val matchEnd = matchStart + normalizedQuery.length
             append(hit.snippet.substring(0, matchStart))
             withStyle(
                 SpanStyle(
-                    background = MaterialTheme.colorScheme.secondaryContainer,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    background = highlightBackground,
+                    color = highlightForeground,
                 ),
             ) {
                 append(hit.snippet.substring(matchStart, matchEnd))

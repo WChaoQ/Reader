@@ -50,6 +50,7 @@ data class SearchHit(
     val locator: Locator,
     val snippet: String,
     val chapterTitle: String,
+    val matchStartInSnippet: Int,
 )
 
 /**
@@ -82,6 +83,7 @@ internal suspend fun searchBookSource(source: BookSource, query: String): List<S
                 locator = Locator(chapter = chapterIndex, offset = index),
                 snippet = plainText.substring(start, end).replace('\n', ' '),
                 chapterTitle = chapter.title ?: "第${chapterIndex + 1}章",
+                matchStartInSnippet = index - start,
             )
             if (hits.size >= 50) return hits
             from = index + normalizedQuery.length
@@ -409,6 +411,7 @@ class ReaderViewModel @Inject constructor(
                 error = null,
                 pageReady = false,
                 searchVisible = false,
+                searchQuery = "",
                 searching = false,
                 searchHits = emptyList(),
                 searchError = null,
