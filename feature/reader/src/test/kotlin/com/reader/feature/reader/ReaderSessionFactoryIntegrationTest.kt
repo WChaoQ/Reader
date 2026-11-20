@@ -106,6 +106,44 @@ class ReaderSessionFactoryIntegrationTest {
     }
 
     @Test
+    fun closingSessionDuringChapterLoadWaitsBeforeClosingSource() = runBlocking {
+        val loadStarted = CompletableDeferred<Unit>()
+        val loadStopped = CompletableDeferred<Unit>()
+        val sourceClosedAfterLoadStopped = CompletableDeferred<Unit>()
+        val source = RecordingBookSource(
+            loadChapterAction = {
+                loadStarted.complete(Unit)
+                try {
+                    awaitCancellation()
+                } finally {
+                    loadStopped.complete(Unit)
+                }
+            },
+            closeAction = {
+                if (loadStopped.isCompleted) sourceClosedAfterLoadStopped.complete(Unit)
+            },
+        )
+
+        withFactory(source) { factory, _ ->
+            val session = factory.open(
+                book = testBook(),
+                layoutConfig = layoutConfig(),
+                initialLocator = Locator(chapter = 0, offset = 0),
+                theme = "day",
+                onLayoutReady = {},
+                onPageRendered = {},
+            )
+
+            withTimeout(5_000) { loadStarted.await() }
+            session.closeAndJoin()
+
+            assertTrue("The in-flight chapter load must finish cancellation cleanup", loadStopped.isCompleted)
+            assertTrue("The source must not close while chapter loading is still active", sourceClosedAfterLoadStopped.isCompleted)
+            assertEquals(1, source.closeCalls.get())
+        }
+    }
+
+    @Test
     fun cancellationDuringTocReadRollsBackSourceBeforeReturning() = runBlocking {
         val tocStarted = CompletableDeferred<Unit>()
         val source = RecordingBookSource(
@@ -217,6 +255,7 @@ class ReaderSessionFactoryIntegrationTest {
                 blocks = listOf(Block.Paragraph("Factory lifecycle fixture")),
             )
         },
+        private val closeAction: () -> Unit = {},
     ) : BookSource {
         override val format: BookFormat = BookFormat.EPUB
         override val chapterCount: Int = 1
@@ -227,6 +266,7 @@ class ReaderSessionFactoryIntegrationTest {
         override suspend fun loadChapter(index: Int): Chapter = loadChapterAction(index)
         override suspend fun openResource(ref: ResourceRef) = ByteArrayInputStream(byteArrayOf())
         override fun close() {
+            closeAction()
             closeCalls.incrementAndGet()
         }
     }
