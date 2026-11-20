@@ -95,8 +95,15 @@ class ReaderSearchTest {
         val hits = searchBookSource(source, "needle")
 
         assertEquals(3, hits.size)
+        val expectedOffsets = listOf("quoted needle", "listed needle", "image needle").map { phrase ->
+            renderedText.indexOf(phrase).let { phraseStart ->
+                phraseStart + phrase.indexOf("needle")
+            }
+        }
+        assertTrue("Every expected match must exist in the rendered layout text", expectedOffsets.all { it >= 0 })
         assertEquals(
-            listOf("quoted needle", "listed needle", "image needle").map { renderedText.indexOf(it) },
+            "Locator offsets must point to the start of the matched word, not the start of its containing phrase",
+            expectedOffsets,
             hits.map { it.locator.offset },
         )
     }
