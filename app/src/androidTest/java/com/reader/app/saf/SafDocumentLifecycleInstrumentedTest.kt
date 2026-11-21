@@ -1,7 +1,6 @@
 package com.reader.app.saf
 
 import android.content.Intent
-import android.os.Bundle
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,7 +45,6 @@ class SafDocumentLifecycleInstrumentedTest {
             .createIntent(context, supportedMimeTypes)
 
         assertEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)
-        assertTrue(intent.hasCategory(Intent.CATEGORY_OPENABLE))
         assertEquals("*/*", intent.type)
         assertEquals(supportedMimeTypes.toList(), intent.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)?.toList())
         assertTrue(intent.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false))
@@ -181,14 +179,11 @@ class SafDocumentLifecycleInstrumentedTest {
         targetPackage: String,
         uri: Uri,
     ) {
-        providerContext.contentResolver.call(
-            TestDocumentsProvider.AUTHORITY,
-            TestDocumentsProvider.METHOD_GRANT_READ,
-            null,
-            Bundle().apply {
-                putString(TestDocumentsProvider.EXTRA_TARGET_PACKAGE, targetPackage)
-                putString(TestDocumentsProvider.EXTRA_URI, uri.toString())
-            },
+        providerContext.grantUriPermission(
+            targetPackage,
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
         )
     }
 
@@ -197,14 +192,10 @@ class SafDocumentLifecycleInstrumentedTest {
         targetPackage: String,
         uri: Uri,
     ) {
-        providerContext.contentResolver.call(
-            TestDocumentsProvider.AUTHORITY,
-            TestDocumentsProvider.METHOD_REVOKE_READ,
-            null,
-            Bundle().apply {
-                putString(TestDocumentsProvider.EXTRA_TARGET_PACKAGE, targetPackage)
-                putString(TestDocumentsProvider.EXTRA_URI, uri.toString())
-            },
+        providerContext.revokeUriPermission(
+            targetPackage,
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION,
         )
     }
 

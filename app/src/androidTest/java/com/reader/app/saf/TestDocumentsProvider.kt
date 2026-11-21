@@ -1,11 +1,9 @@
 package com.reader.app.saf
 
 import android.content.Context
-import android.content.Intent
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
-import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
@@ -22,27 +20,6 @@ import java.io.FileNotFoundException
 class TestDocumentsProvider : DocumentsProvider() {
 
     override fun onCreate(): Boolean = true
-
-    override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
-        val values = requireNotNull(extras) { "Provider grant arguments are required" }
-        val targetPackage = requireNotNull(values.getString(EXTRA_TARGET_PACKAGE))
-        val uri = Uri.parse(requireNotNull(values.getString(EXTRA_URI)))
-        when (method) {
-            METHOD_GRANT_READ -> requireNotNull(context).grantUriPermission(
-                targetPackage,
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
-            )
-            METHOD_REVOKE_READ -> requireNotNull(context).revokeUriPermission(
-                targetPackage,
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-            else -> return super.call(method, arg, extras)
-        }
-        return Bundle()
-    }
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val columns = projection?.toList()?.toTypedArray() ?: ROOT_COLUMNS
@@ -124,10 +101,6 @@ class TestDocumentsProvider : DocumentsProvider() {
         const val DOCUMENT_ID = "fixture.epub"
         const val DISPLAY_NAME = "fixture.epub"
         const val MIME_TYPE = "application/epub+zip"
-        const val METHOD_GRANT_READ = "grant_read"
-        const val METHOD_REVOKE_READ = "revoke_read"
-        const val EXTRA_TARGET_PACKAGE = "target_package"
-        const val EXTRA_URI = "uri"
 
         fun fixtureFile(context: Context): File =
             File(context.cacheDir, "reader-saf/fixture.epub")

@@ -6,6 +6,7 @@
             android:authorities="com.reader.app.test.documents"
             android:exported="true"
             android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS"
             android:process=":saf_provider">
             <intent-filter>
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
