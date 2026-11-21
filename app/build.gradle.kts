@@ -11,6 +11,7 @@ android {
         applicationId = "com.reader.app"
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -45,4 +46,17 @@ dependencies {
     implementation(libs.androidx.profileinstaller)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
+
+    androidTestImplementation(project(":core:common"))
+    androidTestImplementation(project(":core:data"))
+    androidTestImplementation(project(":core:database"))
+    androidTestImplementation(project(":core:storage"))
+    androidTestImplementation(project(":engine:format-api"))
+    androidTestImplementation(project(":engine:format-epub"))
+    androidTestImplementation(libs.androidx.activity.compose)
+    androidTestImplementation(libs.androidx.room.runtime)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.kotlinx.coroutines.android)
 }

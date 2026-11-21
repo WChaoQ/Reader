@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<roots xmlns:android="http://schemas.android.com/apk/res/android">
+    <root
+        android:rootId="reader-test"
+        android:flags="1"
+        android:title="Reader SAF Test Provider"
+        android:documentId="root" />
+</roots>

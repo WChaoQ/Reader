@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name="com.reader.app.saf.TestDocumentsProvider"
+            android:authorities="com.reader.app.test.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="android.content.DOCUMENTS_PROVIDER"
+                android:resource="@xml/test_documents_roots" />
+        </provider>
+    </application>
+</manifest>

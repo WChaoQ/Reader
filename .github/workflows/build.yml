@@ -26,7 +26,7 @@ jobs:
   build:
     name: Assemble ${{ github.event_name == 'workflow_dispatch' && inputs.build_type || 'debug' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -93,6 +93,28 @@ jobs:
       - name: Run EPUB Engine unit tests
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
         run: ./gradlew :engine:format-epub:testDebugUnitTest --stacktrace --no-daemon
+
+      - name: Run Android SAF instrumentation tests
+        if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: ./gradlew :app:connectedDebugAndroidTest --stacktrace --no-daemon
+
+      - name: Upload Android instrumentation test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-saf-instrumentation-results
+          path: |
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Assemble Debug
         if: github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug'
