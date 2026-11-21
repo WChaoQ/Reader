@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -159,11 +160,7 @@ class SafDocumentLifecycleInstrumentedTest {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            providerContext.revokeUriPermission(
-                targetContext.packageName,
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
+            revokeReadAccess(providerContext, targetContext.packageName, uri)
             database.close()
             targetContext.deleteDatabase(DATABASE_NAME)
             fixture.delete()
