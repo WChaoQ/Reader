@@ -32,7 +32,7 @@ class TestDocumentsProvider : DocumentsProvider() {
                         DocumentsContract.Root.COLUMN_TITLE -> "Reader SAF Test Provider"
                         DocumentsContract.Root.COLUMN_DOCUMENT_ID -> ROOT_DOCUMENT_ID
                         DocumentsContract.Root.COLUMN_MIME_TYPES -> MIME_TYPE
-                        DocumentsContract.Root.COLUMN_AVAILABLE_BYTES -> fixtureFile(requireNotNull(context)).length()
+                        DocumentsContract.Root.COLUMN_AVAILABLE_BYTES -> fixtureFile(requireNotNull(context)).parentFile?.usableSpace ?: 0L
                         else -> null
                     })
                 }
