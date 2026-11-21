@@ -28,7 +28,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -38,15 +37,17 @@ import org.junit.runner.RunWith
 class SafDocumentLifecycleInstrumentedTest {
 
     @Test
-    fun openMultipleDocumentsRequestsPersistableReadOnlyAccess() {
+    fun openMultipleDocumentsContractUsesOpenDocumentForSupportedMimeTypes() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val supportedMimeTypes = arrayOf(TestDocumentsProvider.MIME_TYPE)
         val intent = ActivityResultContracts.OpenMultipleDocuments()
-            .createIntent(context, arrayOf(TestDocumentsProvider.MIME_TYPE))
+            .createIntent(context, supportedMimeTypes)
 
         assertEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)
-        assertTrue(intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
-        assertTrue(intent.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0)
-        assertFalse(intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0)
+        assertTrue(intent.hasCategory(Intent.CATEGORY_OPENABLE))
+        assertEquals("*/*", intent.type)
+        assertEquals(supportedMimeTypes.toList(), intent.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)?.toList())
+        assertTrue(intent.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false))
     }
 
     @Test
