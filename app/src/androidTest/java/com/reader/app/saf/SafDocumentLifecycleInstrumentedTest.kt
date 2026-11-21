@@ -62,6 +62,15 @@ class SafDocumentLifecycleInstrumentedTest {
             TestDocumentsProvider.AUTHORITY,
             TestDocumentsProvider.DOCUMENT_ID,
         )
+        runCatching {
+            resolver.releasePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        runCatching { revokeReadAccess(providerContext, targetContext.packageName, uri) }
+        targetContext.deleteDatabase(DATABASE_NAME)
+
         val fixture = TestDocumentsProvider.fixtureFile(providerContext)
         fixture.parentFile?.mkdirs()
         createMinimalEpub(fixture)
@@ -160,7 +169,7 @@ class SafDocumentLifecycleInstrumentedTest {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            revokeReadAccess(providerContext, targetContext.packageName, uri)
+            runCatching { revokeReadAccess(providerContext, targetContext.packageName, uri) }
             database.close()
             targetContext.deleteDatabase(DATABASE_NAME)
             fixture.delete()
