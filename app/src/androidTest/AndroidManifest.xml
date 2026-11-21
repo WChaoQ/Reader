@@ -10,9 +10,6 @@
             <intent-filter>
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
             </intent-filter>
-            <meta-data
-                android:name="android.content.DOCUMENTS_PROVIDER"
-                android:resource="@xml/test_documents_roots" />
         </provider>
     </application>
 </manifest>

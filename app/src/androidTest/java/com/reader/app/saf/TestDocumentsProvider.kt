@@ -52,6 +52,7 @@ class TestDocumentsProvider : DocumentsProvider() {
                     add(column, when (column) {
                         DocumentsContract.Root.COLUMN_ROOT_ID -> ROOT_ID
                         DocumentsContract.Root.COLUMN_FLAGS -> DocumentsContract.Root.FLAG_LOCAL_ONLY
+                        DocumentsContract.Root.COLUMN_ICON -> 0
                         DocumentsContract.Root.COLUMN_TITLE -> "Reader SAF Test Provider"
                         DocumentsContract.Root.COLUMN_DOCUMENT_ID -> ROOT_DOCUMENT_ID
                         DocumentsContract.Root.COLUMN_MIME_TYPES -> MIME_TYPE
@@ -134,6 +135,7 @@ class TestDocumentsProvider : DocumentsProvider() {
         private val ROOT_COLUMNS = arrayOf(
             DocumentsContract.Root.COLUMN_ROOT_ID,
             DocumentsContract.Root.COLUMN_FLAGS,
+            DocumentsContract.Root.COLUMN_ICON,
             DocumentsContract.Root.COLUMN_TITLE,
             DocumentsContract.Root.COLUMN_DOCUMENT_ID,
             DocumentsContract.Root.COLUMN_MIME_TYPES,
