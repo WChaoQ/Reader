@@ -1,6 +1,7 @@
 package com.reader.app.saf
 
 import android.content.Intent
+import android.os.Bundle
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.activity.result.contract.ActivityResultContracts
@@ -126,11 +127,7 @@ class SafDocumentLifecycleInstrumentedTest {
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
-            providerContext.revokeUriPermission(
-                targetContext.packageName,
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
+            revokeReadAccess(providerContext, targetContext.packageName, uri)
             val revokedFailure = runCatching {
                 sourceRepository.open(requireNotNull(persistedBook))
             }.exceptionOrNull()
@@ -178,11 +175,30 @@ class SafDocumentLifecycleInstrumentedTest {
         targetPackage: String,
         uri: Uri,
     ) {
-        providerContext.grantUriPermission(
-            targetPackage,
-            uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+        providerContext.contentResolver.call(
+            TestDocumentsProvider.AUTHORITY,
+            TestDocumentsProvider.METHOD_GRANT_READ,
+            null,
+            Bundle().apply {
+                putString(TestDocumentsProvider.EXTRA_TARGET_PACKAGE, targetPackage)
+                putString(TestDocumentsProvider.EXTRA_URI, uri.toString())
+            },
+        )
+    }
+
+    private fun revokeReadAccess(
+        providerContext: android.content.Context,
+        targetPackage: String,
+        uri: Uri,
+    ) {
+        providerContext.contentResolver.call(
+            TestDocumentsProvider.AUTHORITY,
+            TestDocumentsProvider.METHOD_REVOKE_READ,
+            null,
+            Bundle().apply {
+                putString(TestDocumentsProvider.EXTRA_TARGET_PACKAGE, targetPackage)
+                putString(TestDocumentsProvider.EXTRA_URI, uri.toString())
+            },
         )
     }
 
