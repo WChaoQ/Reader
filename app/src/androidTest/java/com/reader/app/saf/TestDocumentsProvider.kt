@@ -14,8 +14,8 @@ import java.io.FileNotFoundException
 /**
  * A real Android DocumentsProvider hosted by the instrumentation APK.
  *
- * The fixture remains in the test APK's cache directory. The provider exposes it
- * read-only and never copies it into the target application's private storage.
+ * The fixture remains in the test APK's app-specific external cache. The provider
+ * exposes it read-only and never copies it into the target application's storage.
  */
 class TestDocumentsProvider : DocumentsProvider() {
 
@@ -102,8 +102,12 @@ class TestDocumentsProvider : DocumentsProvider() {
         const val DISPLAY_NAME = "fixture.epub"
         const val MIME_TYPE = "application/epub+zip"
 
-        fun fixtureFile(context: Context): File =
-            File(context.cacheDir, "reader-saf/fixture.epub")
+        fun fixtureFile(context: Context): File {
+            val cacheDirectory = requireNotNull(context.externalCacheDir) {
+                "SAF instrumentation fixture requires app-specific external cache"
+            }
+            return File(cacheDirectory, "reader-saf/fixture.epub")
+        }
 
         private val ROOT_COLUMNS = arrayOf(
             DocumentsContract.Root.COLUMN_ROOT_ID,
