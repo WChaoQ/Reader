@@ -90,8 +90,9 @@ class SafDocumentLifecycleInstrumentedTest {
             assertFalse(BookFileStore(targetContext).originalFile(book.id, "epub").exists())
 
             val locator = Locator(chapter = 0, offset = 18, progression = 0.35f)
+            val bookmarkLocator = Locator(chapter = 0, offset = 18)
             first.progress.save(book.id, locator)
-            first.bookmarks.add(book.id, locator, "Persisted SAF bookmark")
+            first.bookmarks.add(book.id, bookmarkLocator, "Persisted SAF bookmark")
 
             database.close()
             database = openDatabase(targetContext)
@@ -103,7 +104,7 @@ class SafDocumentLifecycleInstrumentedTest {
             assertEquals(locator, reopened.progress.get(book.id))
             val bookmarks = reopened.bookmarks.observe(book.id).first()
             assertEquals(1, bookmarks.size)
-            assertEquals(locator, bookmarks.single().locator)
+            assertEquals(bookmarkLocator, bookmarks.single().locator)
 
             val sourceRepository = BookSourceRepository(
                 context = targetContext,
@@ -139,7 +140,7 @@ class SafDocumentLifecycleInstrumentedTest {
 
             assertNotNull(reopened.books.getBook(book.id))
             assertEquals(locator, reopened.progress.get(book.id))
-            assertEquals(locator, reopened.bookmarks.observe(book.id).first().single().locator)
+            assertEquals(bookmarkLocator, reopened.bookmarks.observe(book.id).first().single().locator)
 
             grantReadAccess(providerContext, targetContext.packageName, uri)
             resolver.takePersistableUriPermission(
