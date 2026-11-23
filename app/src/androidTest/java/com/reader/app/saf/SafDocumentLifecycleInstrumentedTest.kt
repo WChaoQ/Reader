@@ -20,10 +20,6 @@ import com.reader.core.model.Locator
 import com.reader.core.storage.BookFileStore
 import com.reader.engine.format.FormatRegistry
 import com.reader.engine.format.epub.EpubFormatHandler
-import java.io.File
-import java.util.zip.CRC32
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -68,10 +64,6 @@ class SafDocumentLifecycleInstrumentedTest {
         }
         runCatching { revokeReadAccess(providerContext, targetContext.packageName, uri) }
         targetContext.deleteDatabase(DATABASE_NAME)
-
-        val fixture = TestDocumentsProvider.fixtureFile(providerContext)
-        fixture.parentFile?.mkdirs()
-        createMinimalEpub(fixture)
 
         var database = openDatabase(targetContext)
         try {
@@ -170,7 +162,6 @@ class SafDocumentLifecycleInstrumentedTest {
             runCatching { revokeReadAccess(providerContext, targetContext.packageName, uri) }
             database.close()
             targetContext.deleteDatabase(DATABASE_NAME)
-            fixture.delete()
         }
     }
 
@@ -217,41 +208,6 @@ class SafDocumentLifecycleInstrumentedTest {
         progress = ProgressRepository(database.progressDao(), TestDispatchers),
         bookmarks = BookmarkRepository(database.bookmarkDao()),
     )
-
-    private fun createMinimalEpub(file: File) {
-        ZipOutputStream(file.outputStream()).use { zip ->
-            val mimetype = "application/epub+zip".toByteArray()
-            val crc = CRC32().apply { update(mimetype) }
-            zip.putNextEntry(
-                ZipEntry("mimetype").apply {
-                    method = ZipEntry.STORED
-                    size = mimetype.size.toLong()
-                    compressedSize = mimetype.size.toLong()
-                    this.crc = crc.value
-                },
-            )
-            zip.write(mimetype)
-            zip.closeEntry()
-            zip.putNextEntry(ZipEntry("META-INF/container.xml"))
-            zip.write(
-                """<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"""
-                    .toByteArray(),
-            )
-            zip.closeEntry()
-            zip.putNextEntry(ZipEntry("OEBPS/content.opf"))
-            zip.write(
-                """<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">saf-fixture</dc:identifier><dc:title>SAF Test Book</dc:title><dc:language>en</dc:language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"""
-                    .toByteArray(),
-            )
-            zip.closeEntry()
-            zip.putNextEntry(ZipEntry("OEBPS/chapter.xhtml"))
-            zip.write(
-                """<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter One</title></head><body><p>Persisted SAF chapter content for the reader integration test.</p></body></html>"""
-                    .toByteArray(),
-            )
-            zip.closeEntry()
-        }
-    }
 
     private data class TestRepositories(
         val books: BookRepository,

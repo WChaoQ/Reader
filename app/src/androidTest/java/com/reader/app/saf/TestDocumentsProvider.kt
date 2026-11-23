@@ -10,16 +10,22 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsProvider
 import java.io.File
 import java.io.FileNotFoundException
+import java.util.zip.CRC32
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /**
  * A real Android DocumentsProvider hosted by the instrumentation APK.
  *
- * The fixture remains in the test APK's app-specific external cache. The provider
- * exposes it read-only and never copies it into the target application's storage.
+ * The synthetic EPUB is created by the provider process in its own internal cache.
+ * The provider exposes it read-only; user-selected documents are never copied here.
  */
 class TestDocumentsProvider : DocumentsProvider() {
 
-    override fun onCreate(): Boolean = true
+    override fun onCreate(): Boolean {
+        createFixture(fixtureFile(requireNotNull(context)))
+        return true
+    }
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val columns = projection?.toList()?.toTypedArray() ?: ROOT_COLUMNS
@@ -102,11 +108,46 @@ class TestDocumentsProvider : DocumentsProvider() {
         const val DISPLAY_NAME = "fixture.epub"
         const val MIME_TYPE = "application/epub+zip"
 
-        fun fixtureFile(context: Context): File {
-            val cacheDirectory = requireNotNull(context.externalCacheDir) {
-                "SAF instrumentation fixture requires app-specific external cache"
+        private fun fixtureFile(context: Context): File =
+            File(context.cacheDir, "reader-saf/fixture.epub")
+
+        private fun createFixture(file: File) {
+            val directory = requireNotNull(file.parentFile)
+            check(directory.exists() || directory.mkdirs()) {
+                "Unable to create SAF test fixture directory"
             }
-            return File(cacheDirectory, "reader-saf/fixture.epub")
+            ZipOutputStream(file.outputStream()).use { zip ->
+                val mimetype = "application/epub+zip".toByteArray()
+                val crc = CRC32().apply { update(mimetype) }
+                zip.putNextEntry(
+                    ZipEntry("mimetype").apply {
+                        method = ZipEntry.STORED
+                        size = mimetype.size.toLong()
+                        compressedSize = mimetype.size.toLong()
+                        this.crc = crc.value
+                    },
+                )
+                zip.write(mimetype)
+                zip.closeEntry()
+                zip.putNextEntry(ZipEntry("META-INF/container.xml"))
+                zip.write(
+                    """<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"""
+                        .toByteArray(),
+                )
+                zip.closeEntry()
+                zip.putNextEntry(ZipEntry("OEBPS/content.opf"))
+                zip.write(
+                    """<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">saf-fixture</dc:identifier><dc:title>SAF Test Book</dc:title><dc:language>en</dc:language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"""
+                        .toByteArray(),
+                )
+                zip.closeEntry()
+                zip.putNextEntry(ZipEntry("OEBPS/chapter.xhtml"))
+                zip.write(
+                    """<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter One</title></head><body><p>Persisted SAF chapter content for the reader integration test.</p></body></html>"""
+                        .toByteArray(),
+                )
+                zip.closeEntry()
+            }
         }
 
         private val ROOT_COLUMNS = arrayOf(
