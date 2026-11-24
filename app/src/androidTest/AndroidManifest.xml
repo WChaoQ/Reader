@@ -1,12 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        This fixture exercises explicit URI-grant and revocation behavior.
+        It uses a test-only permission so instrumentation can issue grants without
+        impersonating system DocumentsUI. Actual picker discovery/selection is a
+        separate end-to-end test and is not claimed by this fixture.
+    -->
+    <permission
+        android:name="com.reader.app.test.permission.ACCESS_SAF_FIXTURE"
+        android:protectionLevel="normal" />
+    <uses-permission android:name="com.reader.app.test.permission.ACCESS_SAF_FIXTURE" />
+
     <application>
         <provider
             android:name="com.reader.app.saf.TestDocumentsProvider"
             android:authorities="com.reader.app.test.documents"
             android:exported="true"
             android:grantUriPermissions="true"
-            android:permission="android.permission.MANAGE_DOCUMENTS"
+            android:permission="com.reader.app.test.permission.ACCESS_SAF_FIXTURE"
             android:process=":saf_provider">
             <intent-filter>
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
