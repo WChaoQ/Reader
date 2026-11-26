@@ -4,6 +4,8 @@ import android.content.Context
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Binder
+import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
@@ -25,6 +27,42 @@ class TestDocumentsProvider : DocumentsProvider() {
     override fun onCreate(): Boolean {
         createFixture(fixtureFile(requireNotNull(context)))
         return true
+    }
+
+    /**
+     * Issues fixture grants from the provider's own UID. The instrumentation code
+     * runs as the target app and cannot delegate a URI it does not own.
+     */
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        val callerPackage = getCallingPackage()
+            ?: throw SecurityException("Caller package is required")
+        if (callerPackage != TARGET_PACKAGE) {
+            throw SecurityException("Only the Reader app may control the SAF test grant")
+        }
+
+        val providerContext = requireNotNull(context)
+        val uri = DocumentsContract.buildDocumentUri(AUTHORITY, DOCUMENT_ID)
+        val identity = Binder.clearCallingIdentity()
+        try {
+            when (method) {
+                METHOD_GRANT_READ -> providerContext.grantUriPermission(
+                    callerPackage,
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+                )
+                METHOD_REVOKE_READ -> providerContext.revokeUriPermission(
+                    callerPackage,
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+                else -> return super.call(method, arg, extras)
+            }
+        } finally {
+            Binder.restoreCallingIdentity(identity)
+        }
+
+        return Bundle().apply { putBoolean(KEY_SUCCESS, true) }
     }
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
@@ -107,6 +145,10 @@ class TestDocumentsProvider : DocumentsProvider() {
         const val DOCUMENT_ID = "fixture.epub"
         const val DISPLAY_NAME = "fixture.epub"
         const val MIME_TYPE = "application/epub+zip"
+        const val TARGET_PACKAGE = "com.reader.app"
+        const val METHOD_GRANT_READ = "reader.test.GRANT_READ"
+        const val METHOD_REVOKE_READ = "reader.test.REVOKE_READ"
+        const val KEY_SUCCESS = "success"
 
         private fun fixtureFile(context: Context): File =
             File(context.cacheDir, "reader-saf/fixture.epub")
