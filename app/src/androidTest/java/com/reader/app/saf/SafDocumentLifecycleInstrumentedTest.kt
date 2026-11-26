@@ -1,5 +1,6 @@
 package com.reader.app.saf
 
+import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,10 +49,35 @@ class SafDocumentLifecycleInstrumentedTest {
     }
 
     @Test
+    fun grantControlRejectsInstrumentationPackage() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val targetContext = instrumentation.targetContext
+        val instrumentationContext = instrumentation.context
+        assertNotEquals(targetContext.packageName, instrumentationContext.packageName)
+
+        val uri = DocumentsContract.buildDocumentUri(
+            TestDocumentsProvider.AUTHORITY,
+            TestDocumentsProvider.DOCUMENT_ID,
+        )
+        val failure = runCatching {
+            instrumentationContext.contentResolver.call(
+                uri,
+                TestDocumentsProvider.METHOD_GRANT_READ,
+                null,
+                null,
+            )
+        }.exceptionOrNull()
+
+        assertTrue(
+            "Only the target Reader package may request fixture grants: $failure",
+            failure is SecurityException,
+        )
+    }
+
+    @Test
     fun persistedSafGrantAndReaderDataSurviveDatabaseRecreationAndCanBeReauthorized() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val targetContext = instrumentation.targetContext
-        val providerContext = instrumentation.context
         val resolver = targetContext.contentResolver
         val uri = DocumentsContract.buildDocumentUri(
             TestDocumentsProvider.AUTHORITY,
@@ -62,12 +89,19 @@ class SafDocumentLifecycleInstrumentedTest {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
         }
-        runCatching { revokeReadAccess(providerContext, targetContext.packageName, uri) }
+        runCatching { revokeReadAccess(resolver, uri) }
         targetContext.deleteDatabase(DATABASE_NAME)
 
         var database = openDatabase(targetContext)
         try {
-            grantReadAccess(providerContext, targetContext.packageName, uri)
+            val deniedBeforeGrant = runCatching {
+                resolver.openFileDescriptor(uri, "r")
+            }.exceptionOrNull()
+            assertTrue(
+                "The target app must not open the fixture before receiving a URI grant: $deniedBeforeGrant",
+                deniedBeforeGrant is SecurityException,
+            )
+            grantReadAccess(resolver, uri)
             val first = repositories(targetContext, database)
             val registry = FormatRegistry(setOf(EpubFormatHandler(targetContext)))
             val openDocument = OpenDocumentUseCase(
@@ -127,7 +161,7 @@ class SafDocumentLifecycleInstrumentedTest {
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
-            revokeReadAccess(providerContext, targetContext.packageName, uri)
+            revokeReadAccess(resolver, uri)
             val revokedFailure = runCatching {
                 sourceRepository.open(requireNotNull(persistedBook))
             }.exceptionOrNull()
@@ -140,7 +174,7 @@ class SafDocumentLifecycleInstrumentedTest {
             assertEquals(locator, reopened.progress.get(book.id))
             assertEquals(bookmarkLocator, reopened.bookmarks.observe(book.id).first().single().locator)
 
-            grantReadAccess(providerContext, targetContext.packageName, uri)
+            grantReadAccess(resolver, uri)
             resolver.takePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
@@ -159,34 +193,35 @@ class SafDocumentLifecycleInstrumentedTest {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            runCatching { revokeReadAccess(providerContext, targetContext.packageName, uri) }
+            runCatching { revokeReadAccess(resolver, uri) }
             database.close()
             targetContext.deleteDatabase(DATABASE_NAME)
         }
     }
 
-    private fun grantReadAccess(
-        providerContext: android.content.Context,
-        targetPackage: String,
-        uri: Uri,
-    ) {
-        providerContext.grantUriPermission(
-            targetPackage,
+    private fun grantReadAccess(resolver: ContentResolver, uri: Uri) {
+        val result = resolver.call(
             uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            TestDocumentsProvider.METHOD_GRANT_READ,
+            null,
+            null,
+        )
+        assertTrue(
+            "The provider must confirm the read-only persistable grant",
+            result?.getBoolean(TestDocumentsProvider.KEY_SUCCESS) == true,
         )
     }
 
-    private fun revokeReadAccess(
-        providerContext: android.content.Context,
-        targetPackage: String,
-        uri: Uri,
-    ) {
-        providerContext.revokeUriPermission(
-            targetPackage,
+    private fun revokeReadAccess(resolver: ContentResolver, uri: Uri) {
+        val result = resolver.call(
             uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            TestDocumentsProvider.METHOD_REVOKE_READ,
+            null,
+            null,
+        )
+        assertTrue(
+            "The provider must confirm grant revocation",
+            result?.getBoolean(TestDocumentsProvider.KEY_SUCCESS) == true,
         )
     }
 
