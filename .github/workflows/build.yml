@@ -104,11 +104,11 @@ jobs:
           retention-days: 14
 
       - name: Assemble Debug
-        if: always()
+        if: ${{ !cancelled() }}
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
       - name: Upload APK
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
