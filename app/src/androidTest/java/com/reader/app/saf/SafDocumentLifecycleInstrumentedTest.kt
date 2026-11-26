@@ -89,7 +89,7 @@ class SafDocumentLifecycleInstrumentedTest {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
         }
-        runCatching { revokeReadAccess(resolver, uri) }
+        runCatching { revokeReadAccess(resolver) }
         targetContext.deleteDatabase(DATABASE_NAME)
 
         var database = openDatabase(targetContext)
@@ -101,7 +101,7 @@ class SafDocumentLifecycleInstrumentedTest {
                 "The target app must not open the fixture before receiving a URI grant: $deniedBeforeGrant",
                 deniedBeforeGrant is SecurityException,
             )
-            grantReadAccess(resolver, uri)
+            grantReadAccess(resolver)
             val first = repositories(targetContext, database)
             val registry = FormatRegistry(setOf(EpubFormatHandler(targetContext)))
             val openDocument = OpenDocumentUseCase(
@@ -161,7 +161,7 @@ class SafDocumentLifecycleInstrumentedTest {
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
             )
-            revokeReadAccess(resolver, uri)
+            revokeReadAccess(resolver)
             val revokedFailure = runCatching {
                 sourceRepository.open(requireNotNull(persistedBook))
             }.exceptionOrNull()
@@ -174,7 +174,7 @@ class SafDocumentLifecycleInstrumentedTest {
             assertEquals(locator, reopened.progress.get(book.id))
             assertEquals(bookmarkLocator, reopened.bookmarks.observe(book.id).first().single().locator)
 
-            grantReadAccess(resolver, uri)
+            grantReadAccess(resolver)
             resolver.takePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
@@ -193,15 +193,15 @@ class SafDocumentLifecycleInstrumentedTest {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            runCatching { revokeReadAccess(resolver, uri) }
+            runCatching { revokeReadAccess(resolver) }
             database.close()
             targetContext.deleteDatabase(DATABASE_NAME)
         }
     }
 
-    private fun grantReadAccess(resolver: ContentResolver, uri: Uri) {
+    private fun grantReadAccess(resolver: ContentResolver) {
         val result = resolver.call(
-            uri,
+            TestDocumentsProvider.AUTHORITY,
             TestDocumentsProvider.METHOD_GRANT_READ,
             null,
             null,
@@ -212,9 +212,9 @@ class SafDocumentLifecycleInstrumentedTest {
         )
     }
 
-    private fun revokeReadAccess(resolver: ContentResolver, uri: Uri) {
+    private fun revokeReadAccess(resolver: ContentResolver) {
         val result = resolver.call(
-            uri,
+            TestDocumentsProvider.AUTHORITY,
             TestDocumentsProvider.METHOD_REVOKE_READ,
             null,
             null,
