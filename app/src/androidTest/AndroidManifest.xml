@@ -17,5 +17,15 @@
                 <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
             </intent-filter>
         </provider>
+    
+        <!--
+            Test-only grant controller. It is separate from DocumentsUI's protected
+            DocumentsProvider endpoint and can issue one explicit read-only fixture grant.
+        -->
+        <provider
+            android:name="com.reader.app.saf.TestGrantControllerProvider"
+            android:authorities="com.reader.app.test.grants"
+            android:exported="true"
+            android:process=":saf_provider" />
     </application>
 </manifest>

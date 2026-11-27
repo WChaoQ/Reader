@@ -2,7 +2,6 @@ package com.reader.app.saf
 
 import android.content.ContentResolver
 import android.content.Intent
-import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.room.Room
@@ -49,7 +48,7 @@ class SafDocumentLifecycleInstrumentedTest {
     }
 
     @Test
-    fun grantControlRejectsInstrumentationPackage() {
+    fun grantControllerRejectsInstrumentationPackage() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val targetContext = instrumentation.targetContext
         val instrumentationContext = instrumentation.context
@@ -62,7 +61,7 @@ class SafDocumentLifecycleInstrumentedTest {
         val failure = runCatching {
             instrumentationContext.contentResolver.call(
                 uri,
-                TestDocumentsProvider.METHOD_GRANT_READ,
+                TestGrantControllerProvider.METHOD_GRANT_READ,
                 null,
                 null,
             )
@@ -201,27 +200,27 @@ class SafDocumentLifecycleInstrumentedTest {
 
     private fun grantReadAccess(resolver: ContentResolver) {
         val result = resolver.call(
-            TestDocumentsProvider.AUTHORITY,
-            TestDocumentsProvider.METHOD_GRANT_READ,
+            TestGrantControllerProvider.AUTHORITY,
+            TestGrantControllerProvider.METHOD_GRANT_READ,
             null,
             null,
         )
         assertTrue(
             "The provider must confirm the read-only persistable grant",
-            result?.getBoolean(TestDocumentsProvider.KEY_SUCCESS) == true,
+            result?.getBoolean(TestGrantControllerProvider.KEY_SUCCESS) == true,
         )
     }
 
     private fun revokeReadAccess(resolver: ContentResolver) {
         val result = resolver.call(
-            TestDocumentsProvider.AUTHORITY,
-            TestDocumentsProvider.METHOD_REVOKE_READ,
+            TestGrantControllerProvider.AUTHORITY,
+            TestGrantControllerProvider.METHOD_REVOKE_READ,
             null,
             null,
         )
         assertTrue(
             "The provider must confirm grant revocation",
-            result?.getBoolean(TestDocumentsProvider.KEY_SUCCESS) == true,
+            result?.getBoolean(TestGrantControllerProvider.KEY_SUCCESS) == true,
         )
     }
 
