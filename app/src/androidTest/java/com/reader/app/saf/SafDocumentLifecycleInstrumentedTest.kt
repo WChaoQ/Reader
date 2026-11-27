@@ -54,22 +54,21 @@ class SafDocumentLifecycleInstrumentedTest {
         val instrumentationContext = instrumentation.context
         assertNotEquals(targetContext.packageName, instrumentationContext.packageName)
 
-        val uri = DocumentsContract.buildDocumentUri(
-            TestDocumentsProvider.AUTHORITY,
-            TestDocumentsProvider.DOCUMENT_ID,
-        )
         val failure = runCatching {
             instrumentationContext.contentResolver.call(
-                uri,
+                TestGrantControllerProvider.AUTHORITY,
                 TestGrantControllerProvider.METHOD_GRANT_READ,
                 null,
                 null,
             )
         }.exceptionOrNull()
 
+        val message = failure?.message.orEmpty()
         assertTrue(
-            "Only the target Reader package may request fixture grants: $failure",
-            failure is SecurityException,
+            "The grant controller must reject the instrumentation caller itself: $failure",
+            failure is SecurityException &&
+                (message.contains("Caller package is required") ||
+                    message.contains("Only the Reader app may control")),
         )
     }
 

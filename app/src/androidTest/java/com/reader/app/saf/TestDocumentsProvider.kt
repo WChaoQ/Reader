@@ -115,7 +115,8 @@ class TestDocumentsProvider : DocumentsProvider() {
             check(directory.exists() || directory.mkdirs()) {
                 "Unable to create SAF test fixture directory"
             }
-            ZipOutputStream(file.outputStream()).use { zip ->
+            val zip = ZipOutputStream(file.outputStream())
+            try {
                 val mimetype = "application/epub+zip".toByteArray()
                 val crc = CRC32().apply { update(mimetype) }
                 zip.putNextEntry(
@@ -146,6 +147,8 @@ class TestDocumentsProvider : DocumentsProvider() {
                         .toByteArray(),
                 )
                 zip.closeEntry()
+            } finally {
+                zip.close()
             }
         }
 
