@@ -53,6 +53,7 @@ dependencies {
     androidTestImplementation(project(":core:storage"))
     androidTestImplementation(project(":engine:format-api"))
     androidTestImplementation(project(":engine:format-epub"))
+    androidTestImplementation(libs.kotlin.stdlib)
     androidTestImplementation(libs.androidx.activity.compose)
     androidTestImplementation(libs.androidx.room.runtime)
     androidTestImplementation(libs.androidx.test.core)
